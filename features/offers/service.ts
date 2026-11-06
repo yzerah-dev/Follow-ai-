@@ -1,11 +1,12 @@
 import type { Db } from "@/lib/database/client";
 import { audit, type AuditActor } from "@/lib/security/audit";
 import { addDays, toIsoDate } from "@/lib/utils";
-import { dec, computeTotals } from "@/lib/money";
+import { dec, computeTotals, lineTotal } from "@/lib/money";
 import { productHabits } from "@/features/invoices/analytics";
 import { loadPolicy } from "@/features/settings/policy-repo";
 import { buildOfferDraft, type BuilderItem, type BuilderProduct } from "./builder";
 import type { PriceRow } from "./pricing";
+import { clampDiscount } from "./policy";
 
 export type OfferActor = { userId: string };
 
@@ -35,20 +36,24 @@ export async function createOfferDraft(
   db: Db,
   orgId: string,
   actor: OfferActor | null,
-  args: { customerId: string; items: BuilderItem[]; source: "manual" | "opportunity" | "campaign" | "lea"; opportunityId?: string | null; campaignId?: string | null; arguments?: string[]; today?: string },
+  args: { customerId: string; items: BuilderItem[]; source: "manual" | "opportunity" | "campaign" | "lea"; opportunityId?: string | null; campaignId?: string | null; arguments?: string[]; today?: string; autoApprove?: { reason: string; maxTotalHt?: string | null } },
 ) {
   const today = args.today ?? toIsoDate(new Date());
   const policy = await loadPolicy(db, orgId);
   const data = await loadBuilderData(db, orgId, args.customerId, args.items.map((i) => i.productId));
   const draft = buildOfferDraft({ ...data, items: args.items, policy, date: today });
   if (!draft.lines.length) throw new Error(draft.excluded.map((e) => e.message).join(" ") || "Aucune ligne valide.");
+  // Plafond d'autonomie : au-delà, l'offre repasse en validation humaine.
+  const autoApprove = args.autoApprove && (!args.autoApprove.maxTotalHt || dec(draft.totalHt).lte(dec(args.autoApprove.maxTotalHt))) ? args.autoApprove : undefined;
   const number = (await db.query<{ n: string }>(`select app.next_document_number($1, 'offer', 'OF') as n`, [orgId])).rows[0]!.n;
   const contact = (await db.query<{ contact_id: string }>(
-    `select contact_id from customer_contacts where customer_id = $1 and can_receive_offers order by is_primary desc limit 1`, [args.customerId])).rows[0];
+    `select cc.contact_id from customer_contacts cc join contacts ct on ct.id = cc.contact_id
+     where cc.customer_id = $1 and cc.can_receive_offers
+     order by (ct.email is not null and ct.consent_email) desc, cc.is_primary desc limit 1`, [args.customerId])).rows[0];
   const offer = await db.query<{ id: string }>(
     `insert into offers (organization_id, number, customer_id, contact_id, owner_user_id, offer_date, valid_until, status, source, opportunity_id, campaign_id,
        conditions, subtotal_ht, discount_total_ht, total_ht, total_vat, total_ttc, warnings, arguments, created_by_agent)
-     values ($1,$2,$3,$4,$5,$6,$7,'pending_approval',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
+     values ($1,$2,$3,$4,$5,$6,$7,$20,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id`,
     [
       orgId, number, args.customerId, contact?.contact_id ?? null,
       actor?.userId ?? (await db.query<{ owner_user_id: string | null }>(`select owner_user_id from customers where id = $1`, [args.customerId])).rows[0]?.owner_user_id ?? null,
@@ -56,6 +61,7 @@ export async function createOfferDraft(
       "Prix HT en euros. Offre valable dans la limite des stocks disponibles. Conditions de paiement selon votre compte.",
       draft.subtotalHt, draft.discountTotalHt, draft.totalHt, draft.totalVat, draft.totalTtc,
       JSON.stringify([...draft.warnings, ...draft.excluded]), JSON.stringify(args.arguments ?? []), args.source !== "manual",
+      autoApprove ? "approved" : "pending_approval",
     ],
   );
   const offerId = offer.rows[0]!.id;
@@ -66,29 +72,32 @@ export async function createOfferDraft(
       [orgId, offerId, l.lineNo, l.productId, l.description, l.quantity, l.unitPriceHt, l.priceSource, l.discountPct, l.vatRate, l.lineTotalHt, [l.rationale, ...l.notes].filter(Boolean).join(" ") || null],
     );
   }
-  await db.query(
-    `insert into approvals (organization_id, subject_type, subject_id, summary, payload, requested_by_agent, requested_by)
-     values ($1,'offer',$2,$3,$4,$5,$6)`,
-    [orgId, offerId, `Offre ${number} — ${dec(draft.totalHt).toFixed(2)} € HT`, { warnings: draft.warnings.length, excluded: draft.excluded.length }, args.source !== "manual", actor?.userId ?? null],
-  );
+  if (!autoApprove)
+    await db.query(
+      `insert into approvals (organization_id, subject_type, subject_id, summary, payload, requested_by_agent, requested_by)
+       values ($1,'offer',$2,$3,$4,$5,$6)`,
+      [orgId, offerId, `Offre ${number} — ${dec(draft.totalHt).toFixed(2)} € HT`, { warnings: draft.warnings.length, excluded: draft.excluded.length }, args.source !== "manual", actor?.userId ?? null],
+    );
+  else
+    await db.query(`insert into agent_decisions (organization_id, decision_type, rationale, payload) values ($1,'auto_offer',$2,$3)`, [orgId, autoApprove.reason, { offerId, number }]);
   if (args.opportunityId) await db.query(`update opportunities set status = 'in_progress', offer_id = $2 where id = $1`, [args.opportunityId, offerId]);
   await audit(db, orgId, actor ? { type: "user", userId: actor.userId } : { type: "agent" }, "offer.created", { type: "offer", id: offerId }, { number, source: args.source, totalHt: draft.totalHt });
-  return { offerId, number, draft };
+  return { offerId, number, draft, autoApproved: !!autoApprove };
 }
 
 /** Offre depuis une opportunité détectée par LÉA (réassort, dormant, nouveautés…). */
-export async function createOfferFromOpportunity(db: Db, orgId: string, actor: OfferActor | null, opportunityId: string, today?: string) {
+export async function createOfferFromOpportunity(db: Db, orgId: string, actor: OfferActor | null, opportunityId: string, today?: string, autoApprove?: { reason: string; maxTotalHt?: string | null }) {
   const opp = (await db.query<{ id: string; customer_id: string; type: string; product_ids: string[]; details: { items?: { productId: string; avgQty: string }[] }; justification: string; status: string; offer_id: string | null }>(
     `select id, customer_id, type, product_ids, details, justification, status, offer_id from opportunities where id = $1 and organization_id = $2`, [opportunityId, orgId])).rows[0];
   if (!opp) throw new Error("Opportunité introuvable.");
-  if (opp.offer_id) return { offerId: opp.offer_id, number: null, draft: null, existing: true as const };
+  if (opp.offer_id) return { offerId: opp.offer_id, number: null, draft: null, autoApproved: false, existing: true as const };
   let items: BuilderItem[];
   if (opp.details.items?.length) {
     items = opp.details.items.map((i) => ({ productId: i.productId, suggestedQty: i.avgQty, rationale: "Quantité moyenne habituelle du client." }));
   } else {
     items = await suggestItemsForCustomer(db, opp.customer_id, opp.product_ids, today);
   }
-  const res = await createOfferDraft(db, orgId, actor, { customerId: opp.customer_id, items, source: "opportunity", opportunityId, arguments: [opp.justification], today });
+  const res = await createOfferDraft(db, orgId, actor, { customerId: opp.customer_id, items, source: "opportunity", opportunityId, arguments: [opp.justification], today, autoApprove });
   return { ...res, existing: false as const };
 }
 
@@ -123,7 +132,7 @@ export async function decideOffer(db: Db, orgId: string, userId: string, offerId
 }
 
 /** Le client accepte : prépare une demande de commande (≠ facture, ≠ encaissement). */
-export async function acceptOfferAndPrepareOrder(db: Db, orgId: string, userId: string, offerId: string) {
+export async function acceptOfferAndPrepareOrder(db: Db, orgId: string, userId: string | null, offerId: string) {
   const offer = (await db.query<{ id: string; number: string; customer_id: string; status: string; opportunity_id: string | null; total_ht: string; total_ttc: string }>(
     `select id, number, customer_id, status, opportunity_id, total_ht, total_ttc from offers where id = $1 and organization_id = $2`, [offerId, orgId])).rows[0];
   if (!offer) throw new Error("Offre introuvable.");
@@ -143,7 +152,7 @@ export async function acceptOfferAndPrepareOrder(db: Db, orgId: string, userId: 
   await db.query(`update offers set status = 'accepted', outcome = 'won', outcome_amount_ht = total_ht where id = $1`, [offerId]);
   if (offer.opportunity_id) await db.query(`update opportunities set status = 'converted' where id = $1`, [offer.opportunity_id]);
   await db.query(`update followup_tasks set status = 'done' where offer_id = $1 and kind = 'order' and status = 'pending'`, [offerId]);
-  const actor: AuditActor = { type: "user", userId };
+  const actor: AuditActor = userId ? { type: "user", userId } : { type: "agent" };
   await audit(db, orgId, actor, "order_request.created", { type: "order_request", id: order.rows[0]!.id }, { offer: offer.number, totalHt: totals.totalHt.toFixed(2) });
   return order.rows[0]!;
 }
@@ -152,4 +161,35 @@ export async function markOfferLost(db: Db, orgId: string, userId: string, offer
   await db.query(`update offers set status = 'rejected', outcome = 'lost' where id = $1 and organization_id = $2`, [offerId, orgId]);
   await db.query(`update opportunities set status = 'dismissed' where offer_id = $1`, [offerId]);
   await audit(db, orgId, { type: "user", userId }, "offer.lost", { type: "offer", id: offerId }, { reason });
+}
+
+/**
+ * Applique à l'offre la remise effectivement communiquée au client (bornée par la politique).
+ * Appelé au moment de l'envoi du message qui annonce la remise : offre, lignes et totaux restent cohérents.
+ */
+export async function applyOfferDiscount(db: Db, orgId: string, offerId: string, pct: number, actor: AuditActor) {
+  const policy = await loadPolicy(db, orgId);
+  const p = dec(clampDiscount(policy, pct));
+  if (p.lte(0)) return null;
+  const lines = (await db.query<{ id: string; quantity: string; unit_price_ht: string; vat_rate: string; discount_pct: string }>(
+    `select id, quantity, unit_price_ht, vat_rate, discount_pct from offer_lines where offer_id = $1 and organization_id = $2 order by line_no`, [offerId, orgId])).rows;
+  const updated: { totalHt: string; vatRate: string }[] = [];
+  let subtotal = dec(0);
+  for (const l of lines) {
+    const pctLine = dec(l.discount_pct).gt(p) ? dec(l.discount_pct) : p;
+    const total = lineTotal(l.quantity, l.unit_price_ht, pctLine.toFixed(2));
+    subtotal = subtotal.plus(dec(l.quantity).times(dec(l.unit_price_ht)));
+    updated.push({ totalHt: total.toFixed(2), vatRate: l.vat_rate });
+    await db.query(`update offer_lines set discount_pct = $2, line_total_ht = $3 where id = $1`, [l.id, pctLine.toFixed(2), total.toFixed(2)]);
+  }
+  const t = computeTotals(updated);
+  const sub = subtotal.toDecimalPlaces(2);
+  await db.query(
+    `update offers set subtotal_ht = $2, discount_total_ht = $3, total_ht = $4, total_vat = $5, total_ttc = $6,
+       warnings = warnings || $7::jsonb where id = $1`,
+    [offerId, sub.toFixed(2), sub.minus(t.totalHt).toFixed(2), t.totalHt.toFixed(2), t.totalVat.toFixed(2), t.totalTtc.toFixed(2),
+      JSON.stringify([{ code: "discount_granted", message: `Remise de ${p.toFixed(2)} % accordée au client (politique : ${policy.maxAutoDiscountPct} % max). Les documents générés avant cette remise ne la reflètent pas.` }])],
+  );
+  await audit(db, orgId, actor, "offer.discount_applied", { type: "offer", id: offerId }, { pct: p.toFixed(2), totalHt: t.totalHt.toFixed(2) });
+  return { pct: p.toFixed(2), totalHt: t.totalHt.toFixed(2) };
 }

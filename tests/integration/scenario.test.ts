@@ -10,7 +10,7 @@ import { generateOfferAssets, decideAsset } from "@/features/creative-studio/ser
 import { draftOfferEmail } from "@/features/agent/lea";
 import { decideMessage, simulateCustomerReply } from "@/features/conversations/service";
 import { getDashboard } from "@/features/dashboard/queries";
-import { resetTestDb, ids, TODAY } from "./db";
+import { resetTestDb, ids, privileged, TODAY } from "./db";
 import ExcelJS from "exceljs";
 import { getFile } from "@/lib/storage";
 
@@ -19,6 +19,8 @@ let I: Awaited<ReturnType<typeof ids>>;
 beforeAll(async () => {
   await resetTestDb();
   I = await ids();
+  // Ce scénario couvre le parcours SUPERVISÉ (validation humaine à chaque étape) ; le mode autonome a son propre test.
+  await privileged((c) => c.query(`update organization_settings set autonomy_level = 'supervised', require_discount_approval = true where organization_id = $1`, [I.orgA]));
 });
 
 describe("Scénario commercial complet", () => {

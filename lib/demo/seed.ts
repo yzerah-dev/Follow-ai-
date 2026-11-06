@@ -35,7 +35,7 @@ type OrgSpec = {
   seed: number;
   color: [number, number, number];
   brandHex: string;
-  policy: { name: string; maxAuto: string };
+  policy: { name: string; maxAuto: string; autonomy: "supervised" | "semi_autonomous" | "autonomous"; requireDiscountApproval: boolean; maxOfferHt: string | null };
   categories: { name: string; vat: string; words: string[]; price: [number, number] }[];
   brands: string[];
 };
@@ -49,7 +49,8 @@ const ORGS: OrgSpec[] = [
     seed: 1101,
     color: [37, 99, 235],
     brandHex: "#2563EB",
-    policy: { name: JONAS_PILOT_POLICY.name!, maxAuto: JONAS_PILOT_POLICY.maxAutoDiscountPct },
+    // JONAS : LÉA autonome, remise de 1 % envoyée sans validation (décision client du 2026-11-07)
+    policy: { name: JONAS_PILOT_POLICY.name!, maxAuto: JONAS_PILOT_POLICY.maxAutoDiscountPct, autonomy: "autonomous", requireDiscountApproval: false, maxOfferHt: "15000.00" },
     brands: ["Maison Lys", "Atelier Nova", "Cosy Home", "Verano", "Bricoleo"],
     categories: [
       { name: "Cuisine", vat: "20.00", price: [2, 35], words: ["Boîte hermétique", "Planche à découper", "Set de couverts", "Mug céramique", "Bocal verre", "Égouttoir", "Moule à gâteau", "Torchon coton"] },
@@ -68,7 +69,7 @@ const ORGS: OrgSpec[] = [
     seed: 2202,
     color: [5, 150, 105],
     brandHex: "#059669",
-    policy: { name: "Politique Beta (démo)", maxAuto: "2.00" },
+    policy: { name: "Politique Beta (démo)", maxAuto: "2.00", autonomy: "supervised", requireDiscountApproval: true, maxOfferHt: null },
     brands: ["Terroir & Co", "Douceurs du Sud", "Fraîcheur", "Papyrus", "Naturel+"],
     categories: [
       { name: "Épicerie fine", vat: "5.50", price: [2, 25], words: ["Confiture", "Huile d'olive", "Tapenade", "Miel", "Biscuits", "Pâte à tartiner"] },
@@ -122,9 +123,11 @@ export async function seedDemo(databaseUrl: string, opts: { today?: string } = {
           await c.query(`insert into organization_members (organization_id, user_id, role, display_name) values ($1,$2,$3,$4)`, [orgId, userIds[u.key], u.role, u.name]);
         }
         await c.query(
-          `insert into organization_settings (organization_id, max_auto_discount_pct, require_discount_approval, policy_name, brand, dormant_after_days, reorder_lookahead_days)
-           values ($1, $2, true, $3, $4, 120, 21)`,
-          [orgId, spec.policy.maxAuto, spec.policy.name, { primaryColor: spec.brandHex, secondaryColor: "#0F172A", fontFamily: "Helvetica", companyName: spec.name.split(" — ")[0], tagline: "Données de démonstration" }],
+          `insert into organization_settings (organization_id, max_auto_discount_pct, require_discount_approval, policy_name, brand, dormant_after_days, reorder_lookahead_days,
+             autonomy_level, autonomous_max_offer_ht)
+           values ($1, $2, $5, $3, $4, 120, 21, $6, $7)`,
+          [orgId, spec.policy.maxAuto, spec.policy.name, { primaryColor: spec.brandHex, secondaryColor: "#0F172A", fontFamily: "Helvetica", companyName: spec.name.split(" — ")[0], tagline: "Données de démonstration" },
+            spec.policy.requireDiscountApproval, spec.policy.autonomy, spec.policy.maxOfferHt],
         );
       }
     } finally {

@@ -17,3 +17,6 @@
 | D13 | `.npmrc legacy-peer-deps` | Conflit de peers `vitest` ↔ `@vitest/browser-playwright` (non utilisé) |
 | D14 | Playwright 1.63 | Version alignée sur le navigateur préinstallé |
 | D15 | Rate limit en mémoire | Suffisant en instance unique ; Redis à brancher en multi-instance |
+| D16 | Autonomie de LÉA par règles déterministes, sans approbation « auto-décidée » | L'agent ne décide jamais une approbation (RLS inchangée) : un envoi autorisé ne crée simplement pas de demande ; décision et raison tracées dans `agent_decisions` |
+| D17 | Envoi unique via `dispatchMessage` | Mêmes contrôles (opposition, consentement, connexion) pour humain et agent ; plage horaire et quota pour l'autonome |
+| D18 | Interrupteur via fonction `security definer` réservée aux managers | Un manager peut arrêter LÉA sans pouvoir modifier toute la politique |

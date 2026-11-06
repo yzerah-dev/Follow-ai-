@@ -13,4 +13,9 @@ export default async function globalSetup() {
   await applyAll(c, { withLocalShim: true });
   await c.end();
   await seedDemo(url);
+  // Le premier test couvre le parcours supervisé ; le test d'autonomie active ensuite le mode autonome via l'interface.
+  const c2 = new pg.Client({ connectionString: url });
+  await c2.connect();
+  await c2.query(`update organization_settings s set autonomy_level = 'supervised', require_discount_approval = true from organizations o where o.id = s.organization_id and o.slug = 'demo-jonas'`);
+  await c2.end();
 }

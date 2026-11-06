@@ -41,8 +41,8 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
        from conversations c left join customers cu on cu.id = c.customer_id left join contacts ct on ct.id = c.contact_id left join offers o on o.id = c.offer_id
        where c.id = $1 and c.organization_id = $2`, [id, ctx.org.organizationId])).rows[0];
     if (!c) return { data: null, role: ctx.org.role };
-    const messages = (await d.query<{ id: string; direction: "inbound" | "outbound"; from_address: string | null; to_address: string | null; subject: string | null; body: string; status: string; ai_generated: boolean; ai_analysis: Analysis | null; attachments: { filename: string }[]; created_at: string; sent_at: string | null; received_at: string | null }>(
-      `select id, direction, from_address, to_address, subject, body, status, ai_generated, ai_analysis, attachments, created_at, sent_at, received_at from messages where conversation_id = $1 order by created_at`, [id])).rows;
+    const messages = (await d.query<{ id: string; direction: "inbound" | "outbound"; from_address: string | null; to_address: string | null; subject: string | null; body: string; status: string; ai_generated: boolean; ai_analysis: Analysis | null; attachments: { filename: string }[]; created_at: string; sent_at: string | null; received_at: string | null; sent_autonomously: boolean; scheduled_at: string | null }>(
+      `select id, direction, from_address, to_address, subject, body, status, ai_generated, ai_analysis, attachments, created_at, sent_at, received_at, sent_autonomously, scheduled_at from messages where conversation_id = $1 order by created_at`, [id])).rows;
     const simulatedChannel = !(await d.query(`select 1 from communication_connections where organization_id = $1 and channel = 'email' and status = 'connected'`, [ctx.org.organizationId])).rowCount;
     return { data: { c, messages, simulatedChannel }, role: ctx.org.role };
   });
@@ -74,9 +74,11 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
               <CardContent className="space-y-3 pt-4">
                 <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
                   {m.direction === "outbound" && m.ai_generated ? <LeaMark size={20} /> : null}
-                  <span className="font-semibold">{m.direction === "inbound" ? m.from_address : m.ai_generated ? "LÉA (brouillon)" : "Vous"}</span>
+                  <span className="font-semibold">{m.direction === "inbound" ? m.from_address : m.ai_generated ? (m.status === "pending_approval" || m.status === "draft" ? "LÉA (brouillon)" : "LÉA") : "Vous"}</span>
                   <span className="text-faint">→ {m.direction === "inbound" ? "nous" : m.to_address ?? "destinataire manquant"}</span>
                   <Badge tone={st?.tone ?? "neutral"}>{st?.label}</Badge>
+                  {m.sent_autonomously ? <Badge tone="success">Envoyé seul par LÉA</Badge> : null}
+                  {m.status === "approved" && m.scheduled_at ? <Badge tone="info">Programmé le {formatDate(m.scheduled_at, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</Badge> : null}
                   {a.simulatedAi ? <Badge tone="warning">IA simulée</Badge> : null}
                   <span className="ml-auto text-faint">{formatDate(m.sent_at ?? m.received_at ?? m.created_at, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                 </div>

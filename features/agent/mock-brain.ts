@@ -127,6 +127,28 @@ const OBJECTION_ARGUMENTS: Record<Objection, string> = {
 };
 
 export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
+  const sign = ["", "Bien cordialement,", "", ctx.senderName, ctx.companyName];
+  const subject = ctx.offer ? `RE: Proposition ${ctx.offer.number}` : "RE: Votre message";
+  if (ctx.analysis.intent === "accept") {
+    return {
+      subject,
+      body: [greeting(ctx.contact), "", "Je vous remercie pour votre confirmation.", "",
+        `Votre commande${ctx.offer ? ` correspondant à notre proposition ${ctx.offer.number}` : ""} est bien prise en compte et transmise à nos équipes. Vous recevrez la confirmation de commande dès son enregistrement.`,
+        ...sign].join("\n"),
+      proposedDiscountPct: null,
+      rationale: "Accord du client : confirmation et préparation de la demande de commande.",
+    };
+  }
+  if (ctx.analysis.intent === "meeting_request") {
+    return {
+      subject,
+      body: [greeting(ctx.contact), "", "Avec plaisir.", "",
+        "Votre commercial vous contactera très prochainement pour convenir ensemble d'un créneau, en visioconférence ou au showroom selon votre préférence.",
+        ...sign].join("\n"),
+      proposedDiscountPct: null,
+      rationale: "Demande de rendez-vous : prise de contact par le commercial (aucun créneau inventé).",
+    };
+  }
   const o = ctx.analysis.objection ?? "no_response";
   const parts = [greeting(ctx.contact), "", "Je vous remercie pour votre retour."];
   parts.push("", OBJECTION_ARGUMENTS[o]);
@@ -173,5 +195,33 @@ export function mockChat(f: ChatFacts): ChatAnswer {
       ? `Voici mes priorités du jour :\n${top.map((t, i) => `${i + 1}. ${t.customer} — ${t.title}${t.value ? ` (potentiel estimé ${fmt(t.value)} HT)` : ""}`).join("\n")}`
       : "Aucune opportunité ouverte pour le moment. Importez vos factures pour que je puisse analyser votre portefeuille.",
     suggestions: top.map((t) => ({ label: t.customer.slice(0, 80), href: t.href })),
+  };
+}
+
+export type FollowupCtx = {
+  contact: ContactCtx;
+  offer: { number: string; totalHt: string; validUntil: string | null } | null;
+  attempt: number;
+  senderName: string;
+  companyName: string;
+};
+
+/** Relance sans réponse — courte, polie, sans nouvelle promesse. */
+export function mockFollowup(ctx: FollowupCtx): EmailDraft {
+  const validity = ctx.offer ? fmtDate(ctx.offer.validUntil) : null;
+  const intro = ctx.attempt <= 1
+    ? `Je me permets de revenir vers vous concernant ${ctx.offer ? `notre proposition ${ctx.offer.number}` : "notre dernier échange"}.`
+    : `Je reviens une dernière fois vers vous au sujet de ${ctx.offer ? `notre proposition ${ctx.offer.number}` : "notre échange"}.`;
+  const body = [
+    greeting(ctx.contact), "", intro,
+    ctx.offer ? `Elle s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? ` et reste valable jusqu'au ${validity}` : ""}.` : "",
+    "", "Je peux enregistrer votre commande sur simple retour de votre part, ou ajuster les quantités si besoin.",
+    "", "Bien cordialement,", "", ctx.senderName, ctx.companyName,
+  ].filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
+  return {
+    subject: ctx.offer ? `Relance — proposition ${ctx.offer.number}` : "Relance",
+    body,
+    personalizationBasis: "generic",
+    arguments: [`Relance n° ${ctx.attempt}`],
   };
 }

@@ -92,3 +92,34 @@ test("isolation : une autre entreprise ne peut pas ouvrir un client de JONAS", a
   expect(asset.status()).toBe(404);
   await other.close();
 });
+
+test("mode autonome : réglé dans les paramètres, LÉA envoie seule", async ({ page }) => {
+  await login(page, "alice@demo.follow.ai");
+  await page.goto("/parametres");
+  await page.getByLabel("Niveau d'autonomie").selectOption("autonomous");
+  await page.getByLabel(/LÉA peut accorder seule une remise/).check();
+  for (const d of ["Sam", "Dim"]) await page.getByLabel(d, { exact: true }).check();
+  await page.getByLabel("Début").fill("00:00");
+  await page.getByLabel("Fin").fill("23:59");
+  await page.getByRole("button", { name: "Enregistrer l'autonomie" }).click();
+  await expect(page.getByText("Autonomie de LÉA enregistrée.")).toBeVisible();
+
+  await page.goto("/");
+  await expect(page.getByText("LÉA au travail")).toBeVisible();
+  await page.getByRole("button", { name: /Lancer LÉA maintenant/ }).click();
+  await expect(page.getByText(/LÉA a préparé \d+ offre\(s\) : [1-9]\d* email\(s\) envoyé\(s\)/)).toBeVisible({ timeout: 60_000 });
+  const sent = page.getByTestId("lea-activity").filter({ hasText: "Offre envoyée" }).first();
+  await expect(sent).toBeVisible();
+  await sent.getByRole("link").click();
+  await page.waitForURL(/\/conversations\//);
+  await expect(page.getByText("Envoyé seul par LÉA")).toBeVisible();
+  await expect(page.getByText("Envoi simulé").first()).toBeVisible();
+
+  // Interrupteur d'arrêt
+  await page.goto("/parametres");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Suspendre LÉA" }).click();
+  await expect(page.getByText("Suspendue").first()).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /Lancer LÉA maintenant/ })).toHaveCount(0);
+});

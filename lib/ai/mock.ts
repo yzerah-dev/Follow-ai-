@@ -1,4 +1,4 @@
-import { mockAnalyzeReply, mockChat, mockObjectionReply, mockOfferEmail, type ChatFacts, type ObjectionCtx, type OfferEmailCtx } from "@/features/agent/mock-brain";
+import { mockAnalyzeReply, mockChat, mockFollowup, mockObjectionReply, mockOfferEmail, type ChatFacts, type FollowupCtx, type ObjectionCtx, type OfferEmailCtx } from "@/features/agent/mock-brain";
 import { LlmError, type LlmProvider, type StructuredRequest, type StructuredResult } from "./types";
 
 /** Fournisseur IA simulé : déterministe, sans appel externe, signalé « IA simulée » dans l'interface. */
@@ -18,6 +18,9 @@ export class MockProvider implements LlmProvider {
         break;
       case "draft_objection_reply":
         out = mockObjectionReply(req.context as ObjectionCtx);
+        break;
+      case "draft_followup":
+        out = mockFollowup(req.context as FollowupCtx);
         break;
       case "lea_chat":
         out = mockChat(req.context as ChatFacts);

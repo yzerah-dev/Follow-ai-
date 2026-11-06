@@ -11,12 +11,16 @@ import { Button } from "@/components/ui/button";
 import { KeyValue, PageHeader } from "@/components/ui/misc";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { SettingsForm } from "./settings-form";
+import { AutonomyForm } from "./autonomy-form";
+import { ActionButton } from "@/components/app/action-button";
+import { setAutonomyPausedAction } from "@/app/actions/commercial";
+import { canManage } from "@/lib/auth/roles";
 
 export const metadata = { title: "Paramètres" };
 
 export default async function SettingsPage() {
   const { data, ctx } = await db(async (d, ctx) => {
-    const s = (await d.query<{ max_auto_discount_pct: string; require_discount_approval: boolean; dormant_after_days: number; reorder_lookahead_days: number; offer_validity_days: number; policy_name: string | null; brand: { primaryColor?: string; companyName?: string } }>(
+    const s = (await d.query<{ autonomy_level: "supervised" | "semi_autonomous" | "autonomous"; autonomy_paused: boolean; autonomous_max_offer_ht: string | null; daily_send_limit: number; daily_offer_limit: number; send_window: { days: number[]; start: string; end: string }; followup_after_days: number; max_followups: number; max_auto_discount_pct: string; require_discount_approval: boolean; dormant_after_days: number; reorder_lookahead_days: number; offer_validity_days: number; policy_name: string | null; brand: { primaryColor?: string; companyName?: string } }>(
       `select * from organization_settings where organization_id = $1`, [ctx.org.organizationId])).rows[0]!;
     const members = (await d.query<{ id: string; display_name: string | null; role: MemberRole; status: string }>(`select id, display_name, role, status from organization_members where organization_id = $1 order by role`, [ctx.org.organizationId])).rows;
     const usage = (await d.query<{ runs: number; tokens_in: number; tokens_out: number; cost: string }>(
@@ -45,6 +49,39 @@ export default async function SettingsPage() {
           </Button>
         }
       />
+      <Card className="mb-5" id="autonomie">
+        <CardHeader>
+          <CardTitle>Autonomie de LÉA</CardTitle>
+          <div className="flex items-center gap-2">
+            {data.s.autonomy_paused ? <Badge tone="danger">Suspendue</Badge> : <Badge tone={data.s.autonomy_level === "supervised" ? "neutral" : "success"}>{data.s.autonomy_level === "autonomous" ? "Autonome" : data.s.autonomy_level === "semi_autonomous" ? "Semi-autonome" : "Supervisé"}</Badge>}
+            {canManage(ctx.org.role) ? (
+              <ActionButton size="sm" variant={data.s.autonomy_paused ? "success" : "danger"} action={setAutonomyPausedAction.bind(null, !data.s.autonomy_paused)}
+                confirm={data.s.autonomy_paused ? undefined : "Suspendre LÉA ? Plus aucun envoi automatique ne partira."}>
+                {data.s.autonomy_paused ? "Réactiver LÉA" : "Suspendre LÉA"}
+              </ActionButton>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <AutonomyForm
+            readOnly={!admin}
+            initial={{
+              level: data.s.autonomy_level,
+              discountWithoutApproval: !data.s.require_discount_approval,
+              maxOfferHt: data.s.autonomous_max_offer_ht ? dec(data.s.autonomous_max_offer_ht).toFixed(2) : "",
+              dailySendLimit: data.s.daily_send_limit,
+              dailyOfferLimit: data.s.daily_offer_limit,
+              days: data.s.send_window.days,
+              start: data.s.send_window.start,
+              end: data.s.send_window.end,
+              followupAfterDays: data.s.followup_after_days,
+              maxFollowups: data.s.max_followups,
+              maxDiscountPct: dec(data.s.max_auto_discount_pct).toString(),
+            }}
+          />
+        </CardContent>
+      </Card>
+
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -64,7 +101,7 @@ export default async function SettingsPage() {
               }}
             />
             <p className="mt-3 text-[12px] text-faint">
-              Au-delà du plafond, LÉA transfère la négociation au commercial. En V1, toute remise communiquée nécessite une validation humaine{data.s.require_discount_approval ? " (activée)" : ""}.
+              Au-delà du plafond, LÉA transfère la négociation au commercial. {data.s.require_discount_approval ? "Toute remise communiquée nécessite une validation humaine." : "LÉA peut accorder seule une remise dans la limite du plafond."}
             </p>
           </CardContent>
         </Card>

@@ -101,7 +101,7 @@ async function loadProductDocs(db: Db, productIds: string[]): Promise<ProductDoc
 export type GeneratedAsset = { id: string; kind: string; filename: string; validation: ValidationReport | null; status: "created" | "not_configured"; reason?: string };
 
 /** « Créer mes supports » : génère, valide et associe les documents à l'offre. */
-export async function generateOfferAssets(db: Db, orgId: string, userId: string, offerId: string, kinds: AssetKind[]): Promise<GeneratedAsset[]> {
+export async function generateOfferAssets(db: Db, orgId: string, userId: string | null, offerId: string, kinds: AssetKind[]): Promise<GeneratedAsset[]> {
   const { doc, productIds, master } = await loadOfferDoc(db, orgId, offerId);
   const job = await db.query<{ id: string }>(
     `insert into creative_jobs (organization_id, kind, status, offer_id, product_ids, input, created_by) values ($1,'offer_assets','running',$2,$3,$4,$5) returning id`,
@@ -150,7 +150,7 @@ export async function generateOfferAssets(db: Db, orgId: string, userId: string,
     }
   }
   await db.query(`update creative_jobs set status = 'succeeded', finished_at = now() where id = $1`, [jobId]);
-  await audit(db, orgId, { type: "user", userId }, "creative.assets_generated", { type: "offer", id: offerId }, { kinds, version });
+  await audit(db, orgId, userId ? { type: "user", userId } : { type: "agent" }, "creative.assets_generated", { type: "offer", id: offerId }, { kinds, version });
   return results;
 }
 
@@ -166,4 +166,14 @@ export async function decideAsset(db: Db, orgId: string, userId: string, assetId
   if (decision === "approved" && "ok" in a.validation_report && a.validation_report.ok === false) throw new Error("Le contrôle automatique a échoué : ce document ne peut pas être validé.");
   await db.query(`update generated_assets set validation_status = $2 where id = $1`, [assetId, decision]);
   await audit(db, orgId, { type: "user", userId }, `creative.asset_${decision}`, { type: "generated_asset", id: assetId });
+}
+
+/** Validation automatique (mode autonome) : uniquement les documents NON génératifs dont tous les contrôles ont réussi. */
+export async function autoApproveAssets(db: Db, orgId: string, offerId: string) {
+  const r = await db.query<{ id: string }>(
+    `update generated_assets set validation_status = 'approved'
+     where organization_id = $1 and offer_id = $2 and validation_status = 'pending' and not is_generative and (validation_report->>'ok')::boolean is true
+     returning id`, [orgId, offerId]);
+  for (const a of r.rows) await audit(db, orgId, { type: "agent" }, "creative.asset_auto_approved", { type: "generated_asset", id: a.id });
+  return r.rowCount ?? 0;
 }

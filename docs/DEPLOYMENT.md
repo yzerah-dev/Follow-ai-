@@ -15,7 +15,9 @@
 ## 2. Vercel
 Variables : `DATABASE_URL`, `SESSION_SECRET` (≥ 32 car.), `APP_ENCRYPTION_KEY` (32 octets base64), `LLM_PROVIDER`, `ANTHROPIC_API_KEY`,
 `LLM_MODEL`, `CRON_SECRET`, `WEBHOOK_SIGNING_SECRET`, `DEMO_TOOLS=false`.
-Cron (`vercel.json`) : `GET /api/cron/daily-plan` chaque jour (en-tête `Authorization: Bearer $CRON_SECRET` ajouté par Vercel).
+Crons (`vercel.json`, en-tête `Authorization: Bearer $CRON_SECRET` ajouté par Vercel) :
+`/api/cron/daily-plan` (jours ouvrés, journée de travail de LÉA) et `/api/cron/dispatch` (toutes les 15 min, envois programmés).
+La fréquence 15 min nécessite un plan Vercel le permettant (sinon : planificateur externe appelant la même route).
 
 ## 3. Stockage
 Le driver local écrit sous `./storage` (non persistant sur Vercel). **Avant production** : implémenter le driver Supabase Storage

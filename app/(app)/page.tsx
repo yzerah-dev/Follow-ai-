@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, LeaMark, Stat } from "@/components/ui/misc";
 import { ActionButton } from "@/components/app/action-button";
 import { OPPORTUNITY_LABEL } from "@/components/app/labels";
-import { createOfferFromOpportunityAction, dismissOpportunityAction, runScanAction } from "@/app/actions/commercial";
-import { canWrite } from "@/lib/auth/roles";
+import { createOfferFromOpportunityAction, dismissOpportunityAction, runScanAction, runAutopilotAction } from "@/app/actions/commercial";
+import { canWrite, canManage } from "@/lib/auth/roles";
 
 export const metadata = { title: "Accueil" };
 
@@ -46,6 +46,52 @@ export default async function HomePage() {
           </ActionButton>
         ) : null}
       </div>
+
+      <Card className={data.autonomy.paused ? "border-danger/30" : data.autonomy.level !== "supervised" ? "border-primary/25" : ""}>
+        <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+          <LeaMark size={36} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[14px] font-semibold">LÉA au travail</p>
+              {data.autonomy.paused ? <Badge tone="danger">Suspendue</Badge> : data.autonomy.level === "autonomous" ? <Badge tone="success">Autonome</Badge> : data.autonomy.level === "semi_autonomous" ? <Badge tone="info">Semi-autonome</Badge> : <Badge>Supervisé</Badge>}
+            </div>
+            <p className="mt-0.5 text-[13px] text-subtle">
+              {data.autonomy.level === "supervised" || data.autonomy.paused
+                ? "LÉA prépare offres et messages ; rien ne part sans votre validation."
+                : `Aujourd'hui : ${data.autonomy.sentToday} envoi(s) automatique(s) · ${data.autonomy.scheduled} programmé(s) · ${data.autonomy.escalations} dossier(s) transféré(s) au commercial.`}
+            </p>
+          </div>
+          {canManage(ctx.org.role) && data.autonomy.level !== "supervised" && !data.autonomy.paused ? (
+            <ActionButton variant="lea" action={runAutopilotAction} pendingLabel="LÉA travaille…">
+              <Sparkles /> Lancer LÉA maintenant
+            </ActionButton>
+          ) : null}
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/parametres#autonomie">Régler</Link>
+          </Button>
+        </div>
+        {data.activity.length ? (
+          <div className="border-t border-border px-5 py-3">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-faint">Dernières actions de LÉA</p>
+            <ul className="space-y-1">
+              {data.activity.map((a) => (
+                <li key={a.id} className="flex items-start gap-2 text-[12.5px]" data-testid="lea-activity">
+                  <Badge tone={a.decision_type.startsWith("auto_") ? "success" : "warning"}>
+                    {a.decision_type === "auto_send" ? "Offre envoyée" : a.decision_type === "auto_reply" ? "Réponse envoyée" : a.decision_type === "auto_followup" ? "Relance envoyée" : a.decision_type === "escalation" ? "Transféré" : "À valider"}
+                  </Badge>
+                  {a.conversation_id ? (
+                    <Link href={`/conversations/${a.conversation_id}`} className="font-medium hover:text-primary">{a.customer_name ?? "Client"}</Link>
+                  ) : (
+                    <span className="font-medium">{a.customer_name ?? "Client"}</span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-subtle">{a.rationale}</span>
+                  <span className="shrink-0 text-faint">{formatRelative(a.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </Card>
 
       {!data.hasInvoices ? (
         <EmptyState

@@ -1,6 +1,18 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-06 (session initiale)._
+_Mise à jour : 2026-11-07 — ajout du mode autonome de LÉA._
+
+## Mode autonome (2026-11-07)
+Décision client : **JONAS en mode autonome, remise ≤ 1 % envoyée sans validation**. Livré et testé :
+- 3 niveaux par organisation (supervisé / semi-autonome / autonome), règles déterministes, interrupteur « Suspendre LÉA ».
+- Pilote automatique : opportunités → offres (plafond de montant, quota/jour) → PDF + Excel validés automatiquement si contrôles OK
+  → email → envoi ou programmation (plage horaire, quota) → relances (2 max) → réponses aux clients → demande de commande sur accord.
+- Remise accordée appliquée à l'offre ; escalade au commercial au-delà de 1 %, sur concurrence, question ouverte, contenu suspect.
+- Accueil : « LÉA au travail » (envois du jour, programmés, transferts, dernières actions) et « Lancer LÉA maintenant ».
+- Crons : `/api/cron/daily-plan` (jours ouvrés) et `/api/cron/dispatch` (toutes les 15 min).
+- La démo « Négoce Beta » reste supervisée (les réglages JONAS ne sont pas imposés aux autres).
+**Les envois restent SIMULÉS** tant qu'aucun connecteur réel (Gmail / Microsoft 365) n'est branché ; brancher un connecteur réel
+activera des envois réels autonomes — à faire uniquement avec votre accord explicite au moment du branchement.
 
 ## Phases
 | Phase | État |
@@ -32,15 +44,15 @@ _Mise à jour : 2026-11-06 (session initiale)._
 - Données : 2 organisations fictives (`is_demo`, bandeau), 100 clients, 200 produits, ~1 700 factures / ~9 300 lignes par organisation,
   visuels produits de démonstration (dégradés étiquetés).
 
-## Tests exécutés (2026-11-06)
+## Tests exécutés (2026-11-07)
 | Suite | Résultat |
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 48/48 |
-| `npm run test:integration` (PostgreSQL 16) | ✅ 20/20 (scénario complet, 16 RLS, 3 imports) |
+| `npm run test` | ✅ 56/56 |
+| `npm run test:integration` (PostgreSQL 16) | ✅ 31/31 (scénario supervisé, 9 autonomie, 18 RLS, 3 imports) |
 | `npm run build` | ✅ |
-| `npm run e2e` (Playwright, Chromium) | ✅ 3/3 |
+| `npm run e2e` (Playwright, Chromium) | ✅ 4/4 (dont mode autonome réglé et lancé via l'interface) |
 
 ## Problèmes connus
 - Rate limit en mémoire (par instance).

@@ -52,6 +52,18 @@ export async function getDashboard(db: Db, orgId: string, today: string) {
   const results = (await db.query<{ won: string | null; orders: number }>(
     `select sum(total_ht) as won, count(*)::int as orders from order_requests
      where organization_id = $1 and created_at >= date_trunc('month', $2::date) and status <> 'cancelled'`, [orgId, today])).rows[0]!;
+  const autonomy = (await db.query<{ level: string; paused: boolean; sent_today: number; scheduled: number; escalations: number }>(
+    `select s.autonomy_level as level, s.autonomy_paused as paused,
+            (select count(*)::int from messages m where m.organization_id = $1 and m.sent_autonomously and m.sent_at >= date_trunc('day', $2::date)) as sent_today,
+            (select count(*)::int from messages m where m.organization_id = $1 and m.status = 'approved' and m.scheduled_at is not null) as scheduled,
+            (select count(*)::int from followup_tasks t where t.organization_id = $1 and t.kind in ('escalation','meeting') and t.status = 'pending') as escalations
+     from organization_settings s where s.organization_id = $1`, [orgId, today])).rows[0] ?? { level: "supervised", paused: false, sent_today: 0, scheduled: 0, escalations: 0 };
+  const activity = (await db.query<{ id: string; decision_type: string; rationale: string; created_at: string; customer_id: string | null; customer_name: string | null; message_id: string | null; conversation_id: string | null }>(
+    `select d.id, d.decision_type, d.rationale, d.created_at, d.customer_id, coalesce(c.trade_name, c.legal_name) as customer_name,
+            d.payload->>'messageId' as message_id, (select m.conversation_id from messages m where m.id = (d.payload->>'messageId')::uuid) as conversation_id
+     from agent_decisions d left join customers c on c.id = d.customer_id
+     where d.organization_id = $1 and d.decision_type in ('auto_send','auto_reply','auto_followup','escalation','draft_followup')
+     order by d.created_at desc limit 8`, [orgId])).rows;
   const hasInvoices = ((await db.query(`select 1 from invoices where organization_id = $1 limit 1`, [orgId])).rowCount ?? 0) > 0;
 
   return {
@@ -68,5 +80,7 @@ export async function getDashboard(db: Db, orgId: string, today: string) {
     appointments: appointments.rows,
     offers,
     results: { wonAmountHt: results.won ?? "0", orderRequests: results.orders },
+    autonomy: { level: autonomy.level, paused: autonomy.paused, sentToday: autonomy.sent_today, scheduled: autonomy.scheduled, escalations: autonomy.escalations },
+    activity,
   };
 }

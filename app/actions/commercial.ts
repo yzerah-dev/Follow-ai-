@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireContext, type AppContext } from "@/lib/auth/context";
-import { canWrite, isAdmin, ForbiddenError, type MemberRole } from "@/lib/auth/roles";
-import { withUser, type Db } from "@/lib/database/client";
+import { canWrite, canManage, isAdmin, ForbiddenError, type MemberRole } from "@/lib/auth/roles";
+import { withUser, withAgent, type Db } from "@/lib/database/client";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit";
 import { env } from "@/lib/env";
@@ -15,6 +15,7 @@ import { generateOfferAssets, decideAsset, ASSET_KINDS } from "@/features/creati
 import { draftOfferEmail } from "@/features/agent/lea";
 import { decideMessage, simulateCustomerReply } from "@/features/conversations/service";
 import { runOpportunityScan } from "@/features/opportunities/service";
+import { runAutopilot } from "@/features/agent/autopilot";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -200,3 +201,68 @@ export async function addSuppressionAction(address: string) {
   return r;
 }
 
+
+const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+const autonomySchema = z.object({
+  autonomyLevel: z.enum(["supervised", "semi_autonomous", "autonomous"]),
+  discountWithoutApproval: z.enum(["on"]).optional(),
+  autonomousMaxOfferHt: z.string().trim().max(20).optional(),
+  dailySendLimit: z.coerce.number().int().min(0).max(10000),
+  dailyOfferLimit: z.coerce.number().int().min(0).max(1000),
+  windowStart: z.string().regex(timeRe),
+  windowEnd: z.string().regex(timeRe),
+  followupAfterDays: z.coerce.number().int().min(1).max(60),
+  maxFollowups: z.coerce.number().int().min(0).max(10),
+});
+
+export async function updateAutonomyAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const r = await run(isAdmin, async (db, ctx) => {
+    const s = autonomySchema.parse(Object.fromEntries([...form.entries()].filter(([k]) => k !== "days")));
+    const days = z.array(z.coerce.number().int().min(1).max(7)).parse(form.getAll("days"));
+    if (s.windowEnd <= s.windowStart) throw new Error("La fin de la plage d'envoi doit être après le début.");
+    const max = s.autonomousMaxOfferHt ? z.string().regex(/^\d+([.,]\d{1,2})?$/, "Plafond invalide").parse(s.autonomousMaxOfferHt).replace(",", ".") : null;
+    await db.query(
+      `update organization_settings set autonomy_level = $2, require_discount_approval = $3, autonomous_max_offer_ht = $4, daily_send_limit = $5,
+         daily_offer_limit = $6, send_window = $7, followup_after_days = $8, max_followups = $9 where organization_id = $1`,
+      [ctx.org.organizationId, s.autonomyLevel, !s.discountWithoutApproval, max, s.dailySendLimit, s.dailyOfferLimit,
+        { days: [...new Set(days)].sort(), start: s.windowStart, end: s.windowEnd }, s.followupAfterDays, s.maxFollowups],
+    );
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "settings.autonomy_updated", undefined, { ...s, days });
+    return "Autonomie de LÉA enregistrée.";
+  });
+  revalidatePath("/parametres");
+  revalidatePath("/");
+  return r;
+}
+
+export async function setAutonomyPausedAction(paused: boolean) {
+  const r = await run(canManage, async (db, ctx) => {
+    // Un manager peut suspendre LÉA (sécurité) ; la mise à jour passe par une fonction dédiée car les paramètres sont réservés aux admins.
+    await db.query(`select app.set_autonomy_paused($1, $2)`, [ctx.org.organizationId, z.boolean().parse(paused)]);
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, paused ? "lea.paused" : "lea.resumed");
+    return paused ? "LÉA est suspendue : plus aucun envoi automatique." : "LÉA a repris le travail.";
+  });
+  revalidatePath("/");
+  revalidatePath("/parametres");
+  return r;
+}
+
+export async function runAutopilotAction() {
+  const ctx = await requireContext();
+  if (!canManage(ctx.org.role)) return { ok: false, error: "Réservé aux managers et administrateurs." } as ActionResult;
+  if (!rateLimit(`autopilot:${ctx.userId}`, 3, 60_000).ok) return { ok: false, error: "Patientez une minute avant de relancer LÉA." } as ActionResult;
+  try {
+    // LÉA travaille sous SON identité (agent, RLS de l'organisation), pas celle de l'utilisateur.
+    const rep = await withAgent(ctx.org.organizationId, (db) => runAutopilot(db, ctx.org.organizationId));
+    await withUser(ctx.userId, (db) => audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "lea.autopilot_triggered", undefined, { offers: rep.offersCreated, sent: rep.emailsSent }));
+    revalidatePath("/");
+    if (rep.skipped) return { ok: false, error: rep.skipped } as ActionResult;
+    return {
+      ok: true,
+      message: `LÉA a préparé ${rep.offersCreated} offre(s) : ${rep.emailsSent} email(s) envoyé(s), ${rep.emailsScheduled} programmé(s), ${rep.offersPendingApproval + rep.emailsPendingApproval} en attente de validation, ${rep.followupsSent} relance(s).${rep.errors.length ? ` ${rep.errors.length} dossier(s) bloqué(s) par les contrôles.` : ""}`,
+    } as ActionResult;
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "LÉA n'a pas pu terminer son travail." } as ActionResult;
+  }
+}

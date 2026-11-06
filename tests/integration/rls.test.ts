@@ -117,6 +117,22 @@ describe("Rôles", () => {
   });
 });
 
+describe("Autonomie", () => {
+  it("seuls owner/admin/manager peuvent suspendre LÉA ; ni un commercial, ni l'agent, ni une autre organisation", async () => {
+    await expectDenied(withUser(I.bruno, (db) => db.query(`select app.set_autonomy_paused($1, true)`, [I.orgA])));
+    await expectDenied(withAgent(I.orgA, (db) => db.query(`select app.set_autonomy_paused($1, false)`, [I.orgA])));
+    await expectDenied(withUser(I.chloe, (db) => db.query(`select app.set_autonomy_paused($1, true)`, [I.orgA])));
+    await withUser(I.alice, (db) => db.query(`select app.set_autonomy_paused($1, true)`, [I.orgA]));
+    const paused = await privileged(async (c) => (await c.query<{ p: boolean }>(`select autonomy_paused p from organization_settings where organization_id = $1`, [I.orgA])).rows[0]!.p);
+    expect(paused).toBe(true);
+    await withUser(I.alice, (db) => db.query(`select app.set_autonomy_paused($1, false)`, [I.orgA]));
+  });
+  it("l'agent ne peut pas modifier son propre niveau d'autonomie", async () => {
+    const r = await withAgent(I.orgA, async (db) => (await db.query(`update organization_settings set autonomy_level = 'autonomous', autonomy_paused = false`)).rowCount);
+    expect(r).toBe(0);
+  });
+});
+
 describe("Agent LÉA (jobs serveur)", () => {
   it("l'agent ne voit que son organisation", async () => {
     const seen = await withAgent(I.orgA, async (db) => (await db.query<{ org: string }>(`select distinct organization_id as org from customers`)).rows.map((r) => r.org));

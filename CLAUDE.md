@@ -15,10 +15,15 @@ Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'ar
 3. **Ne jamais inventer** : prix, stock, délai, remise, caractéristique produit. Une donnée absente reste inconnue (`null`, « Inconnu »).
 4. **IA** : sorties structurées (Zod) ; contenus externes encapsulés via `wrapUntrusted()` ; garde-fous `features/agent/guards.ts`
    appliqués côté serveur ; décisions financières et conformité **déterministes** (`features/offers/policy.ts`).
-5. **Validation humaine** : offres, messages, remises et documents générés passent par `approvals` / `validation_status`.
-   L'agent peut demander, jamais décider (garanti par la RLS).
-6. **Envois** : aucun envoi réel sans connexion configurée + consentement + liste d'opposition vérifiée + validation.
-   Une connexion simulée n'est jamais affichée « Connectée ».
+5. **Autonomie contrôlée** : niveau par organisation (`supervised` | `semi_autonomous` | `autonomous`), décidé par des règles
+   **déterministes** (`features/agent/autonomy.ts`). En mode autonome LÉA envoie seule ce qui respecte la politique ; tout le reste
+   (remise au-delà du plafond, concurrence, question ouverte, identité douteuse, contenu suspect, garde-fou, montant > plafond,
+   relance au-delà du max) passe par `approvals`. L'agent peut demander une approbation, jamais la décider (RLS) ; il ne peut pas
+   modifier son niveau d'autonomie. Interrupteur `autonomy_paused` (managers). JONAS : autonome, remise ≤ 1 % sans validation (décision du 2026-11-07).
+6. **Envois** : tout envoi passe par `dispatchMessage()` (`features/conversations/dispatch.ts`) : liste d'opposition, consentement,
+   connexion utilisable ; envois autonomes limités à la plage horaire et au quota (sinon programmés). Aucun envoi réel sans connecteur
+   réel configuré : activer un connecteur réel = activer des envois réels → approbation explicite du client requise.
+   Une connexion simulée n'est jamais affichée « Connectée ». LinkedIn : jamais d'envoi automatique (CGU).
 7. **Remises** : politique configurable par organisation. Préréglage JONAS (1 %, transfert au-delà) jamais imposé aux autres.
 8. **Prix d'achat / marges** : table `product_purchase_costs` (owner/admin/manager) ; jamais dans un support client.
 9. **Fidélité produit** : ne jamais modifier packaging, logo, référence, EAN, textes, contenance, prix, couleurs, forme.
