@@ -141,6 +141,7 @@ export async function generateOfferPdf(data: OfferDocData, brand: Brand, opts: {
   if (dec(data.totals.discountTotalHt).gt(0)) box("Remises", `- ${formatMoney(data.totals.discountTotalHt)}`);
   box("Total HT", formatMoney(data.totals.totalHt), true);
   box("TVA", formatMoney(data.totals.totalVat));
+  y -= 6;
   page.drawRectangle({ x: 352, y: y - 6, width: A4.w - 388, height: 22, color: hexToRgb(brand.primaryColor) });
   text(page, c, "Total TTC", 360, y, 11, { bold: true, color: rgb(1, 1, 1) });
   const ttc = formatMoney(data.totals.totalTtc);

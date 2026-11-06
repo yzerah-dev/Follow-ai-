@@ -107,6 +107,9 @@ export function imageBox(page: PDFPage, c: Ctx, img: PDFImage | null, x: number,
     page.drawImage(img, { x: x + (w - iw) / 2, y: y + (h - ih) / 2, width: iw, height: ih });
     if (isDemo) text(page, c, "Visuel de démo", x + 4, y + 4, 6, { color: rgb(0.45, 0.45, 0.5) });
   } else {
-    text(page, c, "Photo non disponible", x + w / 2 - 38, y + h / 2 - 3, 7.5, { color: rgb(0.55, 0.56, 0.6) });
+    const label = w < 100 ? "Sans photo" : "Photo non disponible";
+    const size = w < 100 ? 6 : 7.5;
+    const lw = c.font.widthOfTextAtSize(label, size);
+    text(page, c, label, x + Math.max(2, (w - lw) / 2), y + h / 2 - size / 2, size, { color: rgb(0.55, 0.56, 0.6) });
   }
 }

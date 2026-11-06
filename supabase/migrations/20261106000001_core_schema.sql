@@ -573,7 +573,8 @@ create table public.messages (
   created_by uuid references auth.users(id) on delete set null,
   sent_at timestamptz,
   received_at timestamptz,
-  created_at timestamptz not null default now(),
+  -- clock_timestamp : ordre fiable même pour plusieurs messages créés dans une même transaction
+  created_at timestamptz not null default clock_timestamp(),
   unique (organization_id, id),
   foreign key (organization_id, conversation_id) references public.conversations(organization_id, id) on delete cascade
 );

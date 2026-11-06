@@ -3,7 +3,7 @@
  * et dans les tests. Règles déterministes, clairement signalées dans l'interface (« IA simulée »).
  * Il respecte les mêmes contrats (schémas Zod) que le fournisseur réel.
  */
-import type { EmailDraft, ObjectionReply, ReplyAnalysis, Objection, ChatAnswer } from "./schemas";
+import { OBJECTION_LABEL, type EmailDraft, type ObjectionReply, type ReplyAnalysis, type Objection, type ChatAnswer } from "./schemas";
 import { sanitizeText } from "@/lib/security/untrusted";
 
 export type ContactCtx = { salutation: string | null; firstName: string | null; lastName: string | null } | null;
@@ -104,7 +104,7 @@ export function mockAnalyzeReply(text: string): ReplyAnalysis {
     targetPrice: price ? `${price[1]} €${price[3] ? " HT" : ""}` : null,
   };
   if (objection && objection !== "refusal" && !(accept && !base.requestedDiscountPct)) {
-    return { intent: "objection", objection, ...base, sentiment: "neutral", summary: `Objection détectée : ${objection}${base.requestedDiscountPct ? `, remise demandée ${base.requestedDiscountPct} %` : ""}.`, nextAction: "Répondre à l'objection en défendant la valeur de l'offre." };
+    return { intent: "objection", objection, ...base, sentiment: "neutral", summary: `Objection détectée : ${OBJECTION_LABEL[objection].toLowerCase()}${base.requestedDiscountPct ? `, remise demandée ${base.requestedDiscountPct} %` : ""}.`, nextAction: "Répondre à l'objection en défendant la valeur de l'offre." };
   }
   if (objection === "refusal") return { intent: "objection", objection, ...base, sentiment: "negative", summary: "Le client décline la proposition.", nextAction: "Prendre acte, proposer un point ultérieur sans insister." };
   if (accept) return { intent: "accept", objection: null, ...base, sentiment: "positive", summary: "Le client donne son accord.", nextAction: "Préparer la demande de commande." };
