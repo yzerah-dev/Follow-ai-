@@ -13,3 +13,4 @@ storage/
 .DS_Store
 storage-test/
 storage-e2e/
+*.log
