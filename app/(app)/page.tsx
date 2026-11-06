@@ -3,7 +3,7 @@ import { ArrowRight, Inbox, CheckCircle2, CalendarClock, Clock, Sparkles } from 
 import { db } from "@/lib/auth/context";
 import { getDashboard } from "@/features/dashboard/queries";
 import { formatMoney, dec } from "@/lib/money";
-import { formatRelative, toIsoDate } from "@/lib/utils";
+import { formatDate, formatRelative, toIsoDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,9 +76,15 @@ export default async function HomePage() {
             <ul className="space-y-1">
               {data.activity.map((a) => (
                 <li key={a.id} className="flex items-start gap-2 text-[12.5px]" data-testid="lea-activity">
-                  <Badge tone={a.decision_type.startsWith("auto_") ? "success" : "warning"}>
-                    {a.decision_type === "auto_send" ? "Offre envoyée" : a.decision_type === "auto_reply" ? "Réponse envoyée" : a.decision_type === "auto_followup" ? "Relance envoyée" : a.decision_type === "escalation" ? "Transféré" : "À valider"}
-                  </Badge>
+                  {(() => {
+                    // Libellé selon le statut RÉEL du message (envoyé, programmé, en attente).
+                    const what = a.decision_type === "auto_send" ? "Offre" : a.decision_type === "auto_reply" ? "Réponse" : a.decision_type === "auto_followup" ? "Relance" : null;
+                    if (!what) return <Badge tone="warning">{a.decision_type === "escalation" ? "Transféré" : "À valider"}</Badge>;
+                    if (a.message_status === "approved" && a.scheduled_at)
+                      return <Badge tone="info">{what} programmée {formatDate(a.scheduled_at, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</Badge>;
+                    if (a.message_status === "sent" || a.message_status === "simulated_sent") return <Badge tone="success">{what} envoyée</Badge>;
+                    return <Badge tone="warning">{what} — {a.message_status ?? "statut inconnu"}</Badge>;
+                  })()}
                   {a.conversation_id ? (
                     <Link href={`/conversations/${a.conversation_id}`} className="font-medium hover:text-primary">{a.customer_name ?? "Client"}</Link>
                   ) : (

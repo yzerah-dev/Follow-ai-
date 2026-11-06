@@ -108,7 +108,7 @@ test("mode autonome : réglé dans les paramètres, LÉA envoie seule", async ({
   await expect(page.getByText("LÉA au travail")).toBeVisible();
   await page.getByRole("button", { name: /Lancer LÉA maintenant/ }).click();
   await expect(page.getByText(/LÉA a préparé \d+ offre\(s\) : [1-9]\d* email\(s\) envoyé\(s\)/)).toBeVisible({ timeout: 60_000 });
-  const sent = page.getByTestId("lea-activity").filter({ hasText: "Offre envoyée" }).first();
+  const sent = page.getByTestId("lea-activity").filter({ hasText: /Offre (envoyée|programmée)/ }).first();
   await expect(sent).toBeVisible();
   await sent.getByRole("link").click();
   await page.waitForURL(/\/conversations\//);

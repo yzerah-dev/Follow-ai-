@@ -1,7 +1,7 @@
 import type { Db } from "@/lib/database/client";
 import { audit, type AuditActor } from "@/lib/security/audit";
 import { addDays, toIsoDate } from "@/lib/utils";
-import { dec, computeTotals, lineTotal } from "@/lib/money";
+import { dec, computeTotals, lineTotal, formatMoney } from "@/lib/money";
 import { productHabits } from "@/features/invoices/analytics";
 import { loadPolicy } from "@/features/settings/policy-repo";
 import { buildOfferDraft, type BuilderItem, type BuilderProduct } from "./builder";
@@ -76,7 +76,7 @@ export async function createOfferDraft(
     await db.query(
       `insert into approvals (organization_id, subject_type, subject_id, summary, payload, requested_by_agent, requested_by)
        values ($1,'offer',$2,$3,$4,$5,$6)`,
-      [orgId, offerId, `Offre ${number} — ${dec(draft.totalHt).toFixed(2)} € HT`, { warnings: draft.warnings.length, excluded: draft.excluded.length }, args.source !== "manual", actor?.userId ?? null],
+      [orgId, offerId, `Offre ${number} — ${formatMoney(draft.totalHt)} HT`, { warnings: draft.warnings.length, excluded: draft.excluded.length }, args.source !== "manual", actor?.userId ?? null],
     );
   else
     await db.query(`insert into agent_decisions (organization_id, decision_type, rationale, payload) values ($1,'auto_offer',$2,$3)`, [orgId, autoApprove.reason, { offerId, number }]);
