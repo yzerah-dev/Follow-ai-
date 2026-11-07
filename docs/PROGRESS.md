@@ -1,6 +1,19 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-08 — direction artistique « LÉA fait avancer vos ventes »._
+_Mise à jour : 2026-11-08 — voix de LÉA et plan de contact._
+
+## Voix de LÉA (2026-11-08)
+- Paramètres → **Voix de LÉA** : ton (chaleureux, dynamique, professionnel, expert), longueur, présentation transparente
+  (« LÉA, assistante commerciale de … »), emojis WhatsApp, consignes de style (sans chiffres), canal prioritaire, canal de chaque relance.
+- Messages adaptés à la situation : réassort (« répondez OK »), client inactif (reprise de contact), nouveauté (commande test), complément.
+- Arguments factuels calculés (`features/agent/arguments.ts`) : meilleure vente (top 10 % des acheteurs sur 90 j), taux de réassort des magasins
+  (≥ 6 sur 10, au moins 5 acheteurs), stock limité (≤ 3 × la quantité proposée), offre exceptionnelle (remise incluse). Jamais de client nommé, aucune marge.
+- Objection prix : faits vérifiés, puis proposition d'ajuster les quantités ou une sélection plus courte ; remise ≤ plafond de la politique.
+- Relances sur plusieurs canaux (ex. JONAS : J+1 WhatsApp, J+2 e-mail), 1 sollicitation tous les 2 jours pour JONAS.
+- Déclaration du consentement des clients existants par l'entreprise (tracée dans l'audit) ; STOP et listes d'opposition toujours appliqués.
+- Consigne IA mise à jour (plus de mention « brouillon soumis à validation »).
+- JONAS (démo) : ton dynamique, e-mails moyens, emojis WhatsApp, style tiré des e-mails envoyés par l'équipe (sans chiffres ni noms).
+
 
 ## Direction artistique (2026-11-08)
 - Palette violette (primaire #6e44ff), cartes arrondies 16–20 px, ombres douces ; carte LÉA (illustration, statut Active / Supervisée / Suspendue) dans la barre latérale.
@@ -80,7 +93,7 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 80/80 |
+| `npm run test` | ✅ 85/85 |
 | `npm run test:integration` (PostgreSQL 16) | ✅ 52/52 (scénario supervisé, 9 autonomie, 10 discussions, 10 missions dont accueil, 19 RLS, 3 imports) |
 | `npm run build` | ✅ |
 | `npm run e2e` (Playwright, Chromium) | ✅ 5/5 (dont mode autonome et discussion WhatsApp via l'interface) |

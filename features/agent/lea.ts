@@ -10,14 +10,16 @@ import type { LlmProvider } from "@/lib/ai/types";
 import { detectInjection, wrapUntrusted } from "@/lib/security/untrusted";
 import { audit } from "@/lib/security/audit";
 import { evaluateDiscount, type CommercialPolicy } from "@/features/offers/policy";
-import { ANALYST_SYSTEM, LEA_SYSTEM } from "./prompts";
+import { ANALYST_SYSTEM, leaSystem } from "./prompts";
+import { parseVoice } from "./voice";
+import { offerSalesFacts } from "./arguments";
 import { emailDraftSchema, objectionReplySchema, replyAnalysisSchema, type ReplyAnalysis } from "./schemas";
 import { mockFollowup, mockMeetingProposal, mockObjectionReply, mockOfferEmail, MEETING_FORMAT_LABEL, type ContactCtx } from "./mock-brain";
 import { answerFromFacts, detectTopics, type Facts } from "./answers";
 import { buildTemplate } from "@/features/conversations/templates";
 import { toE164, isMobileFr } from "@/lib/phone";
 import { formatMoney } from "@/lib/money";
-import { formatDate } from "@/lib/utils";
+import { formatDate, toIsoDate } from "@/lib/utils";
 import { checkMessage } from "./guards";
 import { loadPolicy, loadAutonomy } from "@/features/settings/policy-repo";
 import { decideAutonomy, type AutonomyDecision } from "./autonomy";
@@ -36,18 +38,20 @@ async function recordRun(db: Db, orgId: string, kind: string, actor: Actor, llm:
 }
 
 async function senderInfo(db: Db, orgId: string, userId: string | null) {
-  const org = (await db.query<{ name: string; brand: { companyName?: string } }>(
-    `select o.name, s.brand from organizations o left join organization_settings s on s.organization_id = o.id where o.id = $1`, [orgId])).rows[0];
+  const org = (await db.query<{ name: string; brand: { companyName?: string }; brand_voice: unknown }>(
+    `select o.name, s.brand, s.brand_voice from organizations o left join organization_settings s on s.organization_id = o.id where o.id = $1`, [orgId])).rows[0];
   const me = userId
     ? (await db.query<{ display_name: string | null }>(`select display_name from organization_members where organization_id = $1 and user_id = $2`, [orgId, userId])).rows[0]
     : undefined;
-  return { senderName: me?.display_name ?? "LÉA — assistante commerciale", companyName: org?.brand?.companyName ?? org?.name ?? "" };
+  return { senderName: me?.display_name ?? "LÉA — assistante commerciale", companyName: org?.brand?.companyName ?? org?.name ?? "", voice: parseVoice(org?.brand_voice) };
 }
 
-type ContactInfo = { id: string; email: string | null; mobile: string | null; channel: "email" | "whatsapp" | null; phonePreferred: boolean; ctx: ContactCtx };
+type ContactInfo = { id: string; email: string | null; mobile: string | null; channel: "email" | "whatsapp" | null; canEmail: boolean; canWhatsapp: boolean; phonePreferred: boolean; ctx: ContactCtx };
 
 /** Contact joignable du client et canal à utiliser : email si consentement, sinon WhatsApp (mobile + consentement). */
 async function primaryContact(db: Db, customerId: string): Promise<ContactInfo | null> {
+  const def = (await db.query<{ default_channel: "email" | "whatsapp" }>(
+    `select s.default_channel from organization_settings s join customers cu on cu.organization_id = s.organization_id where cu.id = $1`, [customerId])).rows[0]?.default_channel ?? "email";
   const r = await db.query<{ id: string; email: string | null; phone: string | null; consent_email: boolean; consent_whatsapp: boolean; preferred_channel: string | null; salutation: string | null; first_name: string | null; last_name: string | null }>(
     `select c.id, c.email, coalesce(c.mobile, c.phone) as phone, c.consent_email, c.consent_whatsapp, c.preferred_channel, c.salutation, c.first_name, c.last_name
      from customer_contacts cc join contacts c on c.id = cc.contact_id
@@ -62,8 +66,10 @@ async function primaryContact(db: Db, customerId: string): Promise<ContactInfo |
   const canEmail = !!c.email && c.consent_email;
   const canWa = c.consent_whatsapp && isMobileFr(mobile);
   // Préférence de contact du client respectée en priorité, dans la limite des consentements.
-  const channel = c.preferred_channel === "whatsapp" && canWa ? "whatsapp" : c.preferred_channel === "email" && canEmail ? "email" : canEmail ? "email" : canWa ? "whatsapp" : null;
-  return { id: c.id, email: c.email, mobile: isMobileFr(mobile) ? mobile : null, channel, phonePreferred: c.preferred_channel === "phone", ctx: { salutation: c.salutation, firstName: c.first_name, lastName: c.last_name } };
+  // Sans préférence exprimée : canal privilégié de l'organisation (Paramètres → Voix de LÉA), puis l'autre canal autorisé.
+  const pref = c.preferred_channel === "whatsapp" || c.preferred_channel === "email" ? c.preferred_channel : def;
+  const channel = pref === "whatsapp" && canWa ? "whatsapp" : pref === "email" && canEmail ? "email" : canEmail ? "email" : canWa ? "whatsapp" : null;
+  return { id: c.id, email: c.email, mobile: isMobileFr(mobile) ? mobile : null, channel, canEmail, canWhatsapp: canWa, phonePreferred: c.preferred_channel === "phone", ctx: { salutation: c.salutation, firstName: c.first_name, lastName: c.last_name } };
 }
 
 /** Faits vérifiés pour répondre aux questions (offre en cours, conditions du compte, disponibilités connues). */
@@ -103,7 +109,11 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
   const contact = await primaryContact(db, offer.customer_id);
   const sender = await senderInfo(db, orgId, actor.userId);
   const maxLineDiscount = Math.max(0, ...lines.map((l) => Number(l.discount_pct)));
+  const opportunityType = (await db.query<{ type: string }>(`select op.type from offers o join opportunities op on op.id = o.opportunity_id where o.id = $1`, [offerId])).rows[0]?.type ?? null;
+  const salesFacts = await offerSalesFacts(db, orgId, offerId, toIsoDate(opts.now ?? new Date()));
   const context = {
+    opportunityType,
+    salesFacts,
     customerName: offer.customer_name,
     contact: contact?.ctx ?? null,
     offer: { number: offer.number, validUntil: offer.valid_until, totalHt: offer.total_ht, lines: lines.map((l) => ({ reference: l.reference, description: l.description, quantity: l.quantity })) },
@@ -112,9 +122,10 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
     ...sender,
   };
   const input = `Rédige l'email d'accompagnement de l'offre ci-dessous. Objectif : obtenir la commande ou un rendez-vous.
+Situation : ${opportunityType ?? "proposition"}. Arguments factuels utilisables : ${salesFacts.length ? salesFacts.join(" | ") : "aucun"}.
 Données vérifiées du système (seules sources autorisées) :
 ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
-  const res = await llm.structured({ task: "draft_offer_email", system: LEA_SYSTEM, input, schema: emailDraftSchema, context });
+  const res = await llm.structured({ task: "draft_offer_email", system: leaSystem(sender.voice, sender.companyName), input, schema: emailDraftSchema, context });
   let draft = res.data;
   const guard = checkMessage(draft.body, { allowedDiscountPct: maxLineDiscount > 0 ? maxLineDiscount : null, personalizedAllowed: history >= 3 && usual.length > 0 });
   const guardNotes: string[] = [];
@@ -256,7 +267,9 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
     decisionText = escalate ? "Concurrence évoquée : transfert au commercial avec les éléments collectés." : decisionText;
   }
 
+  const salesFacts = m.offer_id && ["too_expensive", "budget", "competition"].includes(analysis.objection ?? "") ? await offerSalesFacts(db, orgId, m.offer_id, toIsoDate(opts.now ?? new Date())) : [];
   const context = {
+    salesFacts,
     analysis,
     customerName: m.customer_name ?? "",
     contact: contact?.ctx ?? null,
@@ -273,12 +286,13 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
 Remise maximale utilisable dans ce message : ${allowed ?? 0} %. ${escalate ? "Le dossier est transféré au commercial : annonce-le sans rien promettre." : ""}
 Canal : ${channel === "whatsapp" ? "WhatsApp — messages courts, ton de messagerie, pas d'objet" : "email"}.
 Réponses factuelles autorisées (n'en invente aucune autre) : ${answers.length ? answers.join(" | ") : "aucune"}.
+Arguments de valeur vérifiés (objection prix) : ${salesFacts.length ? salesFacts.join(" | ") : "aucun"}.
 ${unknownLabels.length ? `Sujets SANS donnée fiable (annonce que le commercial confirme, ne réponds pas toi-même) : ${unknownLabels.join(", ")}.` : ""}
 Données du système :
 ${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerName, contact: context.contact, offer: context.offer, analysis }, null, 2))}
 Historique de la conversation (du plus ancien au plus récent) :
 ${wrapUntrusted("conversation_history", history.map((h) => `${h.direction === "inbound" ? "CLIENT" : "NOUS"} : ${h.body}`).join("\n---\n"), 6000)}`;
-  const res = await llm.structured({ task: "draft_objection_reply", system: LEA_SYSTEM, input, schema: objectionReplySchema, context });
+  const res = await llm.structured({ task: "draft_objection_reply", system: leaSystem(sender.voice, sender.companyName), input, schema: objectionReplySchema, context });
   let reply = res.data;
   const guard = checkMessage(reply.body, { allowedDiscountPct: allowed, personalizedAllowed: true });
   const guardNotes: string[] = [];
@@ -375,7 +389,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   const context = { contact: contact?.ctx ?? null, offer: offer ? { number: offer.number, totalHt: offer.total_ht, validUntil: offer.valid_until } : null, attempt: t.attempt, ...sender };
   const res = await llm.structured({
     task: "draft_followup",
-    system: LEA_SYSTEM,
+    system: leaSystem(sender.voice, sender.companyName),
     input: `Rédige une relance courte et polie (relance n° ${t.attempt}) pour une proposition restée sans réponse. N'ajoute aucune remise ni promesse.\nDonnées :\n${wrapUntrusted("system_data", JSON.stringify(context))}`,
     schema: emailDraftSchema,
     context,
@@ -387,8 +401,21 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
     guardNotes.push(...guard.reasons);
     draft = mockFollowup(context);
   }
+  // Canal de la relance : celui prévu pour ce numéro de relance (Paramètres), sinon celui de la conversation.
+  let convId = t.conversation_id;
+  let fchannel = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [t.conversation_id])).rows[0]!.channel;
+  const plan = (await db.query<{ followup_channels: string[] }>(`select followup_channels from organization_settings where organization_id = $1`, [orgId])).rows[0]?.followup_channels ?? [];
+  const wanted = plan[t.attempt - 1] as "email" | "whatsapp" | undefined;
+  if (wanted && wanted !== fchannel && t.offer_id && contact && (wanted === "email" ? contact.canEmail : contact.canWhatsapp)) {
+    const other = (await db.query<{ id: string }>(`select id from conversations where offer_id = $1 and channel = $2 limit 1`, [t.offer_id, wanted])).rows[0]
+      ?? (await db.query<{ id: string }>(
+        `insert into conversations (organization_id, customer_id, contact_id, channel, subject, status, offer_id, last_message_at)
+         values ($1,$2,$3,$4,$5,'open',$6, now()) returning id`,
+        [orgId, t.customer_id, contact.id, wanted, wanted === "email" && offer ? `Proposition ${offer.number}` : null, t.offer_id])).rows[0]!;
+    convId = other.id;
+    fchannel = wanted;
+  }
   // WhatsApp : la relance arrive hors fenêtre de 24 h → modèle approuvé « relance_offre ».
-  const fchannel = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [t.conversation_id])).rows[0]!.channel;
   let ftemplate: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (fchannel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || "";
@@ -402,13 +429,13 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   const msg = await db.query<{ id: string }>(
     `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis)
      values ($1,$2,'outbound',$8,$3,$4,$5,$6,true,$7) returning id`,
-    [orgId, t.conversation_id, fchannel === "whatsapp" ? contact?.mobile ?? null : contact?.email ?? null, fchannel === "whatsapp" ? null : draft.subject, draft.body, automatic ? "approved" : "pending_approval",
+    [orgId, convId, fchannel === "whatsapp" ? contact?.mobile ?? null : contact?.email ?? null, fchannel === "whatsapp" ? null : draft.subject, draft.body, automatic ? "approved" : "pending_approval",
       { kind: "followup", attempt: t.attempt, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision, template: ftemplate }, fchannel],
   );
   await db.query(`update followup_tasks set status = 'done' where id = $1`, [taskId]);
   if (!automatic)
     await db.query(`insert into approvals (organization_id, subject_type, subject_id, summary, payload, requested_by_agent) values ($1,'message',$2,$3,$4,true)`,
-      [orgId, msg.rows[0]!.id, `Relance n° ${t.attempt}${offer ? ` — offre ${offer.number}` : ""}`, { conversationId: t.conversation_id, reason: decision.reason }]);
+      [orgId, msg.rows[0]!.id, `Relance n° ${t.attempt}${offer ? ` — offre ${offer.number}` : ""}`, { conversationId: convId, reason: decision.reason }]);
   await db.query(`insert into agent_decisions (organization_id, run_id, customer_id, decision_type, rationale, payload, requires_approval) values ($1,$2,$3,$4,$5,$6,$7)`,
     [orgId, runId, t.customer_id, automatic ? "auto_followup" : "draft_followup", decision.reason, { messageId: msg.rows[0]!.id }, !automatic]);
   const dispatch = automatic ? await dispatchMessage(db, orgId, msg.rows[0]!.id, { type: "agent" }, { autonomous: true, now: opts.now }) : null;
@@ -446,7 +473,7 @@ export async function draftMeetingProposal(db: Db, orgId: string, opportunityId:
   const context = { contact: contact.ctx, channel, format, newProductNames, permanentsCount, ...sender };
   const res = await llm.structured({
     task: "draft_meeting_proposal",
-    system: LEA_SYSTEM,
+    system: leaSystem(sender.voice, sender.companyName),
     input: `Propose un rendez-vous de 20 minutes ${MEETING_FORMAT_LABEL[format]} au client. Ne mentionne aucune analyse interne (baisse de chiffre d'affaires, retard d'objectif) et ne propose aucun créneau précis.\nDonnées :\n${wrapUntrusted("system_data", JSON.stringify({ format, newProductNames, permanentsCount, contact: contact.ctx }))}`,
     schema: emailDraftSchema,
     context,

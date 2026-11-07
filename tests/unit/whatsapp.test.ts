@@ -111,7 +111,7 @@ describe("Style des réponses selon le canal", () => {
   it("WhatsApp : court, signé LÉA, pas de formule répétée après le premier échange", () => {
     const first = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 0 });
     expect(first.body.startsWith("Bonjour Monsieur Martin !")).toBe(true);
-    expect(first.body).toContain("— LÉA, JONAS");
+    expect(first.body).toContain("— LÉA, assistante commerciale de JONAS");
     expect(first.body).not.toContain("Bien cordialement");
     const later = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 2 });
     expect(later.body.startsWith("•")).toBe(true);

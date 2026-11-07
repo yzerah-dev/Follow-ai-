@@ -12,15 +12,17 @@ import { KeyValue, PageHeader } from "@/components/ui/misc";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { SettingsForm } from "./settings-form";
 import { AutonomyForm } from "./autonomy-form";
+import { VoiceForm } from "./voice-form";
+import { parseVoice } from "@/features/agent/voice";
 import { ActionButton } from "@/components/app/action-button";
-import { setAutonomyPausedAction } from "@/app/actions/commercial";
+import { setAutonomyPausedAction, declareExistingConsentAction } from "@/app/actions/commercial";
 import { canManage } from "@/lib/auth/roles";
 
 export const metadata = { title: "Paramètres" };
 
 export default async function SettingsPage() {
   const { data, ctx } = await db(async (d, ctx) => {
-    const s = (await d.query<{ meeting_interval_days: number; contact_cooldown_days: number; refusal_cooldown_days: number; target_alert_pct: string; autonomy_level: "supervised" | "semi_autonomous" | "autonomous"; autonomy_paused: boolean; autonomous_max_offer_ht: string | null; daily_send_limit: number; daily_offer_limit: number; send_window: { days: number[]; start: string; end: string }; followup_after_days: number; max_followups: number; max_auto_discount_pct: string; require_discount_approval: boolean; dormant_after_days: number; reorder_lookahead_days: number; offer_validity_days: number; policy_name: string | null; brand: { primaryColor?: string; companyName?: string } }>(
+    const s = (await d.query<{ meeting_interval_days: number; contact_cooldown_days: number; refusal_cooldown_days: number; target_alert_pct: string; autonomy_level: "supervised" | "semi_autonomous" | "autonomous"; autonomy_paused: boolean; autonomous_max_offer_ht: string | null; daily_send_limit: number; daily_offer_limit: number; send_window: { days: number[]; start: string; end: string }; followup_after_days: number; max_followups: number; max_auto_discount_pct: string; require_discount_approval: boolean; dormant_after_days: number; reorder_lookahead_days: number; offer_validity_days: number; policy_name: string | null; brand: { primaryColor?: string; companyName?: string }; brand_voice: unknown; default_channel: "email" | "whatsapp"; followup_channels: string[] }>(
       `select * from organization_settings where organization_id = $1`, [ctx.org.organizationId])).rows[0]!;
     const members = (await d.query<{ id: string; display_name: string | null; role: MemberRole; status: string }>(`select id, display_name, role, status from organization_members where organization_id = $1 order by role`, [ctx.org.organizationId])).rows;
     const usage = (await d.query<{ runs: number; tokens_in: number; tokens_out: number; cost: string }>(
@@ -79,6 +81,29 @@ export default async function SettingsPage() {
               maxDiscountPct: dec(data.s.max_auto_discount_pct).toString(),
             }}
           />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-5" id="voix">
+        <CardHeader>
+          <CardTitle>Voix de LÉA</CardTitle>
+          {admin ? (
+            <ActionButton size="sm" variant="secondary" action={declareExistingConsentAction}
+              confirm="Vous déclarez que vos clients existants ont consenti à être contactés par e-mail et WhatsApp. Cette déclaration est tracée et engage votre entreprise. Continuer ?">
+              Déclarer le consentement des clients existants
+            </ActionButton>
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const v = parseVoice(data.s.brand_voice);
+            return (
+              <VoiceForm
+                readOnly={!admin}
+                initial={{ ...v, defaultChannel: data.s.default_channel, followupChannels: data.s.followup_channels, companyName: data.s.brand?.companyName ?? ctx.org.name }}
+              />
+            );
+          })()}
         </CardContent>
       </Card>
 

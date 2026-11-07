@@ -18,6 +18,23 @@ import { DEFAULT_TEMPLATES } from "@/features/creative-studio/templates";
 import { rng, demoEan } from "./random";
 import { gradientPng } from "./png";
 
+/**
+ * Voix de LÉA pour JONAS (questionnaire du 2026-11-08 + style des e-mails envoyés par l'équipe, sans aucun chiffre ni nom de client).
+ * Fréquence : 1 sollicitation tous les 2 jours (2 à 3 par semaine), relances J+1 WhatsApp puis J+2 e-mail.
+ */
+const JONAS_VOICE = {
+  tone: "dynamic",
+  length: "medium",
+  whatsappEmojis: true,
+  assistantTitle: "assistante commerciale",
+  styleNotes: [
+    "Positionnement : JONAS, votre partenaire du discount ; produits utiles du quotidien à forte rotation.",
+    "Mettre en avant l'image prix, le chiffre d'affaires additionnel et les opérations clés en main : box et displays prêts à poser, signalétique prix fournie (« Sélectionnez. Posez. Vendez. »).",
+    "Terminer par une question fermée qui fait avancer (ex. « préférez-vous lancer l'opération début novembre ou début janvier ? »).",
+    "Formules : « Je reste à votre disposition », « Dans l'attente de votre retour », « Bien cordialement ».",
+  ].join("\n"),
+};
+
 export const DEMO_PASSWORD = "demo-follow-ai";
 
 export const DEMO_USERS = [
@@ -124,10 +141,11 @@ export async function seedDemo(databaseUrl: string, opts: { today?: string } = {
         }
         await c.query(
           `insert into organization_settings (organization_id, max_auto_discount_pct, require_discount_approval, policy_name, brand, dormant_after_days, reorder_lookahead_days,
-             autonomy_level, autonomous_max_offer_ht, daily_offer_limit)
-           values ($1, $2, $5, $3, $4, 120, 21, $6, $7, $8)`,
+             autonomy_level, autonomous_max_offer_ht, daily_offer_limit, brand_voice, contact_cooldown_days, followup_after_days, followup_channels)
+           values ($1, $2, $5, $3, $4, 120, 21, $6, $7, $8, $9, $10, $11, $12)`,
           [orgId, spec.policy.maxAuto, spec.policy.name, { primaryColor: spec.brandHex, secondaryColor: "#0F172A", fontFamily: "Helvetica", companyName: spec.name.split(" — ")[0], tagline: "Données de démonstration" },
-            spec.policy.requireDiscountApproval, spec.policy.autonomy, spec.policy.maxOfferHt, spec.key === "A" ? 60 : 20],
+            spec.policy.requireDiscountApproval, spec.policy.autonomy, spec.policy.maxOfferHt, spec.key === "A" ? 60 : 20,
+            spec.key === "A" ? JONAS_VOICE : {}, spec.key === "A" ? 2 : 7, spec.key === "A" ? 1 : 5, spec.key === "A" ? ["whatsapp", "email"] : []],
         );
       }
     } finally {

@@ -5,6 +5,7 @@
  */
 import { OBJECTION_LABEL, type EmailDraft, type ObjectionReply, type ReplyAnalysis, type Objection, type ChatAnswer } from "./schemas";
 import { sanitizeText } from "@/lib/security/untrusted";
+import { parseVoice, signoff, emoji, type Voice } from "./voice";
 
 export type ContactCtx = { salutation: string | null; firstName: string | null; lastName: string | null } | null;
 
@@ -16,6 +17,11 @@ export type OfferEmailCtx = {
   newProductNames: string[];
   senderName: string;
   companyName: string;
+  voice?: Voice;
+  /** Type d'opportunité à l'origine de l'offre (reorder, dormant_customer, new_product…) : choisit l'appel à l'action. */
+  opportunityType?: string | null;
+  /** Arguments factuels calculés par le système (features/agent/arguments.ts). */
+  salesFacts?: string[];
 };
 
 export type ObjectionCtx = {
@@ -31,6 +37,8 @@ export type ObjectionCtx = {
   answers: string[]; // réponses factuelles calculées (features/agent/answers.ts)
   unknownLabels: string[]; // sujets sans donnée fiable → transmis au commercial
   turn: number; // nombre de réponses déjà envoyées dans la conversation
+  voice?: Voice;
+  salesFacts?: string[];
 };
 
 export function greeting(contact: ContactCtx): string {
@@ -42,38 +50,59 @@ export function greeting(contact: ContactCtx): string {
 const fmt = (v: string) => `${Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/ /g, " ")} €`;
 const fmtDate = (d: string | null) => (d ? new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`)) : null);
 
+/** Appel à l'action et accroche selon la situation du client. */
+function offerAngle(type: string | null | undefined, dynamic: boolean) {
+  switch (type) {
+    case "reorder":
+      return { intro: "Au regard de vos derniers achats, vos références habituelles arrivent au moment du réassort : je vous ai préparé la commande.", cta: dynamic ? "Répondez simplement « OK » et je lance le réassort aujourd'hui." : "Répondez « OK » et j'enregistre la commande." };
+    case "dormant_customer":
+      return { intro: "Cela fait un moment que nous n'avons pas travaillé ensemble : je vous ai préparé une sélection de vos références habituelles pour repartir sur de bonnes bases.", cta: dynamic ? "Un « OK » suffit pour que je prépare la livraison, ou je vous appelle 10 minutes quand vous voulez." : "Je peux enregistrer la commande dès votre retour, ou organiser un court échange." };
+    case "new_product":
+      return { intro: "Nous lançons des nouveautés qui correspondent à votre assortiment : je vous ai préparé une première sélection.", cta: dynamic ? "Lancez-vous avec cette commande test : un « OK » et c'est parti." : "Souhaitez-vous démarrer avec cette première commande test ?" };
+    case "cross_sell":
+    case "back_in_stock":
+      return { intro: "Pour compléter votre prochaine commande, je vous ai préparé une sélection de références qui complètent ce que vous travaillez déjà.", cta: dynamic ? "Je l'ajoute à votre commande ? Répondez « OK »." : "Souhaitez-vous que je l'ajoute à votre prochaine commande ?" };
+    default:
+      return null;
+  }
+}
+
 export function mockOfferEmail(ctx: OfferEmailCtx): EmailDraft {
+  const v = parseVoice(ctx.voice);
+  const dynamic = v.tone === "dynamic";
   const personalized = ctx.history.invoiceCount >= 3 && ctx.history.usualReferences.length > 0;
   const refs = ctx.offer.lines.slice(0, 6).map((l) => `• ${l.description} (réf. ${l.reference}) — ${Number(l.quantity)} unités`).join("\n");
-  const intro = personalized
+  const angle = personalized || ctx.opportunityType === "new_product" ? offerAngle(ctx.opportunityType, dynamic) : null;
+  const intro = angle?.intro ?? (personalized
     ? `Au regard de vos derniers achats, j'ai préparé une sélection de réassort sur les références que vous travaillez régulièrement.`
-    : `J'ai préparé une proposition sur une sélection de références de notre gamme.`;
+    : `J'ai préparé une proposition sur une sélection de références de notre gamme.`);
   const news = ctx.newProductNames.length
     ? `\n\nJ'y ai ajouté ${ctx.newProductNames.length === 1 ? "une nouveauté susceptible" : `${ctx.newProductNames.length} nouveautés susceptibles`} de compléter votre assortiment : ${ctx.newProductNames.join(", ")}.`
     : "";
+  const facts = v.length === "medium" && ctx.salesFacts?.length ? `\n\nPourquoi maintenant :\n${ctx.salesFacts.slice(0, 3).map((f) => `• ${f}`).join("\n")}` : "";
   const validity = fmtDate(ctx.offer.validUntil);
-  const body = `${greeting(ctx.contact)}
-
-${intro}${news}
-
-${refs}
-
-Le montant de la proposition s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? `, valable jusqu'au ${validity}` : ""}. Vous trouverez le détail dans l'offre ${ctx.offer.number} jointe.
-
-Je peux enregistrer votre commande dès votre retour, ou organiser un rendez-vous de présentation en visioconférence si vous le souhaitez.
-
-Bien cordialement,
-
-${ctx.senderName}
-${ctx.companyName}`;
+  const cta = angle?.cta ?? "Je peux enregistrer votre commande dès votre retour, ou organiser un rendez-vous de présentation en visioconférence si vous le souhaitez.";
+  const body = [
+    greeting(ctx.contact), "",
+    `${intro}${news}`, "",
+    refs,
+    facts ? facts.slice(1) : null,
+    "",
+    `Le montant de la proposition s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? `, valable jusqu'au ${validity}` : ""}. Vous trouverez le détail dans l'offre ${ctx.offer.number} jointe.`,
+    "", cta,
+    ...signoff(v, ctx.senderName, ctx.companyName, "email"),
+  ].filter((l): l is string => l !== null).join("\n").replace(/\n{3,}/g, "\n\n");
+  const subjects: Record<string, string> = { reorder: "Votre réassort est prêt", dormant_customer: "On repart ensemble ?", new_product: "Nos nouveautés pour votre magasin", cross_sell: "Pour compléter votre commande", back_in_stock: "De retour en stock" };
+  const subjectLead = angle && ctx.opportunityType ? subjects[ctx.opportunityType] : null;
   return {
-    subject: personalized ? `Votre réassort — proposition ${ctx.offer.number}` : `Proposition commerciale ${ctx.offer.number}`,
+    subject: subjectLead ? `${subjectLead} — proposition ${ctx.offer.number}` : personalized ? `Votre réassort — proposition ${ctx.offer.number}` : `Proposition commerciale ${ctx.offer.number}`,
     body,
     personalizationBasis: personalized ? "purchase_history" : "generic",
     arguments: [
       personalized ? `Basé sur ${ctx.history.invoiceCount} factures et vos références habituelles` : "Sélection de la gamme",
       "Quantités ajustées au colisage",
       ...(ctx.newProductNames.length ? ["Nouveautés en complément"] : []),
+      ...(ctx.salesFacts ?? []).slice(0, 3),
     ],
   };
 }
@@ -134,11 +163,12 @@ const OBJECTION_ARGUMENTS: Record<Objection, string> = {
 };
 
 export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
+  const v = parseVoice(ctx.voice);
   const wa = ctx.channel === "whatsapp";
   const subject = ctx.offer ? `RE: Proposition ${ctx.offer.number}` : "RE: Votre message";
   // WhatsApp : ton de messagerie, court ; pas de formule d'appel répétée au fil de la discussion.
-  const hello = wa ? (ctx.turn > 0 ? null : greeting(ctx.contact).replace(/,$/, " !")) : greeting(ctx.contact);
-  const sign = wa ? [`— LÉA, ${ctx.companyName}`] : ["", "Bien cordialement,", "", ctx.senderName, ctx.companyName];
+  const hello = wa ? (ctx.turn > 0 ? null : `${greeting(ctx.contact).replace(/,$/, " !")}${emoji(v, "whatsapp", "👋")}`) : greeting(ctx.contact);
+  const sign = signoff(v, ctx.senderName, ctx.companyName, ctx.channel);
   const facts = ctx.answers.length ? (wa ? ctx.answers.map((a) => `• ${a}`) : ["", ...ctx.answers.map((a) => `• ${a}`)]) : [];
   const unknownLine = ctx.unknownLabels.length
     ? `Concernant ${ctx.unknownLabels.join(" et ")}, je vérifie auprès de votre commercial et je reviens vers vous très vite${wa ? "." : " avec une réponse précise."}`
@@ -148,7 +178,7 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
   if (ctx.analysis.intent === "accept") {
     return {
       subject,
-      body: join([hello, wa ? null : "", wa ? "Merci pour votre confirmation !" : "Je vous remercie pour votre confirmation.", wa ? null : "",
+      body: join([hello, wa ? null : "", wa ? `Merci pour votre confirmation !${emoji(v, "whatsapp", "✅")}` : "Je vous remercie pour votre confirmation.", wa ? null : "",
         `Votre commande${ctx.offer ? ` (proposition ${ctx.offer.number})` : ""} est bien prise en compte et transmise à nos équipes. Vous recevrez la confirmation de commande dès son enregistrement.`, ...sign]),
       proposedDiscountPct: null,
       rationale: "Accord du client : confirmation et préparation de la demande de commande.",
@@ -173,7 +203,15 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
   }
 
   const o = ctx.analysis.objection ?? "no_response";
-  const parts: (string | null)[] = [hello, wa ? null : "", wa ? null : "Je vous remercie pour votre retour.", wa ? null : "", OBJECTION_ARGUMENTS[o], ...facts];
+  // Objection prix / budget / concurrence : on défend la valeur avec les faits calculés par le système, puis on propose d'ajuster.
+  const priceLike = o === "too_expensive" || o === "budget" || o === "competition";
+  const valueFacts = priceLike && ctx.salesFacts?.length ? ctx.salesFacts.slice(0, wa ? 2 : 3) : [];
+  const argument = priceLike && valueFacts.length
+    ? (o === "competition" ? OBJECTION_ARGUMENTS.competition : v.tone === "dynamic" ? "Je comprends, mais cette offre vaut vraiment le coup :" : "Je comprends votre attention au prix. Quelques éléments sur cette offre :")
+    : OBJECTION_ARGUMENTS[o];
+  const parts: (string | null)[] = [hello, wa ? null : "", wa ? null : "Je vous remercie pour votre retour.", wa ? null : "", argument, ...valueFacts.map((f) => `• ${f}`), ...facts];
+  if (priceLike && !ctx.escalate && o !== "competition")
+    parts.push(wa ? null : "", "Si le montant vous freine, je peux ajuster les quantités ou vous préparer une sélection plus courte, centrée sur les références qui tournent le plus : dites-moi simplement le budget visé.");
   let proposed: number | null = null;
   if (ctx.analysis.requestedDiscountPct !== null || o === "too_expensive" || o === "competition") {
     if (ctx.escalate) {
@@ -226,10 +264,12 @@ export type FollowupCtx = {
   attempt: number;
   senderName: string;
   companyName: string;
+  voice?: Voice;
 };
 
 /** Relance sans réponse — courte, polie, sans nouvelle promesse. */
 export function mockFollowup(ctx: FollowupCtx): EmailDraft {
+  const v = parseVoice(ctx.voice);
   const validity = ctx.offer ? fmtDate(ctx.offer.validUntil) : null;
   const intro = ctx.attempt <= 1
     ? `Je me permets de revenir vers vous concernant ${ctx.offer ? `notre proposition ${ctx.offer.number}` : "notre dernier échange"}.`
@@ -237,8 +277,8 @@ export function mockFollowup(ctx: FollowupCtx): EmailDraft {
   const body = [
     greeting(ctx.contact), "", intro,
     ctx.offer ? `Elle s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? ` et reste valable jusqu'au ${validity}` : ""}.` : "",
-    "", "Je peux enregistrer votre commande sur simple retour de votre part, ou ajuster les quantités si besoin.",
-    "", "Bien cordialement,", "", ctx.senderName, ctx.companyName,
+    "", v.tone === "dynamic" ? "Un simple « OK » et je lance la commande ; je peux aussi ajuster les quantités si besoin." : "Je peux enregistrer votre commande sur simple retour de votre part, ou ajuster les quantités si besoin.",
+    ...signoff(v, ctx.senderName, ctx.companyName, "email"),
   ].filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
   return {
     subject: ctx.offer ? `Relance — proposition ${ctx.offer.number}` : "Relance",
@@ -256,28 +296,26 @@ export type MeetingCtx = {
   permanentsCount: number;
   senderName: string;
   companyName: string;
+  voice?: Voice;
 };
 
 export const MEETING_FORMAT_LABEL = { visio: "en visioconférence", showroom: "dans notre showroom", phone: "par téléphone" } as const;
 
 /** Proposition de rendez-vous : contexte utile au client, sans exposer d'analyse interne (baisse de CA, etc.), sans créneau inventé. */
 export function mockMeetingProposal(ctx: MeetingCtx): EmailDraft {
+  const v = parseVoice(ctx.voice);
   const where = MEETING_FORMAT_LABEL[ctx.format];
   const reasons = [
     ctx.permanentsCount ? `faire le point sur vos ${ctx.permanentsCount} références habituelles` : "faire le point sur vos besoins",
     ctx.newProductNames.length ? `vous présenter ${ctx.newProductNames.length === 1 ? "une nouveauté adaptée" : `${ctx.newProductNames.length} nouveautés adaptées`} à votre assortiment (${ctx.newProductNames.slice(0, 3).join(", ")})` : null,
   ].filter(Boolean).join(" et ");
   const body = ctx.channel === "whatsapp"
-    ? `${greeting(ctx.contact).replace(/,$/, " !")}\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?\n— LÉA, ${ctx.companyName}`
+    ? `${greeting(ctx.contact).replace(/,$/, " !")}\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?${emoji(v, "whatsapp", "📅")}\n${signoff(v, ctx.senderName, ctx.companyName, "whatsapp")[0]}`
     : `${greeting(ctx.contact)}
 
 Je vous propose un rendez-vous de 20 minutes ${where} pour ${reasons}.
 
 Quel créneau vous conviendrait cette semaine ou la suivante ? Je m'adapte à vos disponibilités.
-
-Bien cordialement,
-
-${ctx.senderName}
-${ctx.companyName}`;
+${signoff(v, ctx.senderName, ctx.companyName, "email").join("\n")}`;
   return { subject: "Un point ensemble ?", body, personalizationBasis: ctx.permanentsCount ? "purchase_history" : "generic", arguments: [reasons] };
 }

@@ -78,8 +78,8 @@ describe("WhatsApp : LÉA engage et mène la discussion", () => {
   });
 
   it("règle des 24 h : plus de message libre, un humain ne peut pas écrire hors fenêtre", async () => {
-    await expect(withUser(I.bruno, (db) => sendManualMessage(db, I.orgA, I.bruno, waConv, { body: "Petite question" })))
-      .resolves.toMatchObject({ status: "sent" }); // < 24 h après le dernier message du client (horloge réelle > T0 : voir test suivant)
+    await expect(withUser(I.bruno, (db) => sendManualMessage(db, I.orgA, I.bruno, waConv, { body: "Petite question" }, { now: at(120) })))
+      .resolves.toMatchObject({ status: "sent" }); // < 24 h après le dernier message du client
   });
 
   it("STOP sur WhatsApp : liste d'opposition WhatsApp, envois bloqués", async () => {
@@ -133,6 +133,6 @@ describe("Email : LÉA répond aussi aux questions par email", () => {
     expect(m.channel).toBe("email");
     expect(m.body).toMatch(/valable jusqu'au \d{1,2} \p{L}+ 2026/u);
     expect(m.body).toMatch(/€ HT, soit .+ € TTC/);
-    expect(m.body).toContain("Bien cordialement");
+    expect(m.body).toMatch(/Bien cordialement|À très vite/);
   });
 });

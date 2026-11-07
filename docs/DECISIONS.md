@@ -24,3 +24,7 @@
 | D20 | Direction artistique violette, graphiques SVG faits main | Pas de dépendance graphique ; palette catégorielle validée (#6e44ff, #e0821b, #1f8fb8, #c2407e) ; légende avec valeurs, info-bulles, un seul axe |
 | D21 | LÉA illustrée (SVG stylisé), clients en initiales | Aucune photo de personne réelle ni logo de marque tiers sans licence ; un visuel sous licence peut être fourni (`public/lea.png`) |
 | D22 | « Permanent » dans la répartition du CA = couple client × produit facturé au moins 3 fois | Règle simple et déterministe, affichée sous le graphique ; distincte du critère de cycle régulier de la mission 2 |
+| D23 | Voix de LÉA = forme uniquement (`brand_voice`) | Ton, longueur, emojis, présentation ; le fond (prix, stock, remises, arguments) reste calculé par le système |
+| D24 | Arguments commerciaux seulement s'ils sont vérifiés par les données, agrégés (≥ 5 acheteurs), sans « % » | Pas d'allégation trompeuse ; aucun autre client identifiable ; le « % » reste réservé aux remises contrôlées par les garde-fous |
+| D25 | Pas d'argument « marge » tant qu'aucun prix de vente conseillé n'est importé | Une marge client ne peut pas être affirmée sans PVC ; prix d'achat et marges internes jamais communiqués |
+| D26 | Consentement des clients existants déclaré par l'entreprise, audité | L'entreprise porte la responsabilité de la déclaration ; STOP / opposition prioritaires ; modèles Meta obligatoires hors 24 h |

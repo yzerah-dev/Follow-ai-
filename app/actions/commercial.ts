@@ -326,3 +326,53 @@ export async function setDoNotSolicitAction(customerId: string, value: boolean) 
   revalidatePath(`/clients/${customerId}`);
   return r;
 }
+
+const voiceFormSchema = z.object({
+  tone: z.enum(["warm", "dynamic", "formal", "expert"]),
+  length: z.enum(["short", "medium"]),
+  whatsappEmojis: z.string().optional(),
+  assistantTitle: z.string().trim().min(2).max(80),
+  styleNotes: z.string().trim().max(2000).default(""),
+  defaultChannel: z.enum(["email", "whatsapp"]),
+  followup1: z.enum(["same", "email", "whatsapp"]),
+  followup2: z.enum(["same", "email", "whatsapp"]),
+});
+
+/** Voix de LÉA et canaux : forme des messages uniquement (jamais les prix, remises ou faits). */
+export async function updateVoiceAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const r = await run(isAdmin, async (db, ctx) => {
+    const s = voiceFormSchema.parse(Object.fromEntries(form.entries()));
+    if (/\d+\s?%|\d+[.,]?\d*\s?€/.test(s.styleNotes)) throw new Error("Les consignes de style ne doivent pas contenir de chiffres (prix, remises, marges) : LÉA les tire des données.");
+    const voice = { tone: s.tone, length: s.length, whatsappEmojis: s.whatsappEmojis === "on", assistantTitle: s.assistantTitle, styleNotes: s.styleNotes };
+    // Relances : un canal explicite par rang ; « même canal » en fin de liste est simplement omis.
+    const plan = [s.followup1, s.followup2];
+    while (plan.length && plan[plan.length - 1] === "same") plan.pop();
+    if (plan.includes("same")) throw new Error("Choisissez un canal pour la 1re relance si la 2e en a un.");
+    await db.query(`update organization_settings set brand_voice = $2, default_channel = $3, followup_channels = $4 where organization_id = $1`,
+      [ctx.org.organizationId, voice, s.defaultChannel, plan]);
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "settings.voice_updated", undefined, { ...voice, defaultChannel: s.defaultChannel, followupChannels: plan });
+    return "Voix de LÉA enregistrée.";
+  });
+  revalidatePath("/parametres");
+  return r;
+}
+
+/**
+ * Déclaration par l'entreprise du consentement de ses clients existants (e-mail et WhatsApp), tracée dans l'audit.
+ * L'entreprise reste responsable de cette déclaration ; tout client peut se désinscrire (« STOP ») à tout moment.
+ */
+export async function declareExistingConsentAction() {
+  return run(isAdmin, async (db, ctx) => {
+    const r = await db.query<{ email: number; wa: number }>(
+      `with upd as (
+         update contacts set consent_email = consent_email or email is not null,
+                             consent_whatsapp = consent_whatsapp or coalesce(mobile, phone) is not null,
+                             consent_source = coalesce(consent_source, 'declared_by_organization'), consent_at = coalesce(consent_at, now())
+         where organization_id = $1 and (not consent_email and email is not null or not consent_whatsapp and coalesce(mobile, phone) is not null)
+         returning (email is not null) as e, (coalesce(mobile, phone) is not null) as w)
+       select count(*) filter (where e)::int as email, count(*) filter (where w)::int as wa from upd`, [ctx.org.organizationId]);
+    const n = r.rows[0]!;
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "consent.declared_existing_customers", undefined, n);
+    return `Consentement déclaré : ${n.email} contact(s) e-mail, ${n.wa} contact(s) WhatsApp mis à jour. Les listes d'opposition restent appliquées.`;
+  });
+}

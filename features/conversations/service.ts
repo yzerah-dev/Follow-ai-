@@ -110,7 +110,7 @@ export async function simulateCustomerReply(db: Db, orgId: string, userId: strin
 }
 
 /** Un humain reprend la main et répond lui-même dans la discussion (mêmes contrôles d'envoi que LÉA). */
-export async function sendManualMessage(db: Db, orgId: string, userId: string, conversationId: string, input: { body: string; subject?: string | null }) {
+export async function sendManualMessage(db: Db, orgId: string, userId: string, conversationId: string, input: { body: string; subject?: string | null }, opts: { now?: Date } = {}) {
   const conv = (await db.query<{ channel: "email" | "whatsapp"; contact_email: string | null; contact_phone: string | null; subject: string | null; last_from: string | null }>(
     `select c.channel, ct.email as contact_email, coalesce(ct.mobile, ct.phone) as contact_phone, c.subject,
             (select m.from_address from messages m where m.conversation_id = c.id and m.direction = 'inbound' order by m.created_at desc limit 1) as last_from
@@ -127,7 +127,7 @@ export async function sendManualMessage(db: Db, orgId: string, userId: string, c
   );
   // Le commercial a répondu : les messages entrants sont traités, les brouillons de LÉA en attente sont écartés.
   await db.query(`update messages set handled = true where conversation_id = $1 and direction = 'inbound' and not handled`, [conversationId]);
-  const res = await dispatchMessage(db, orgId, msg.rows[0]!.id, { type: "user", userId }, { autonomous: false });
+  const res = await dispatchMessage(db, orgId, msg.rows[0]!.id, { type: "user", userId }, { autonomous: false, now: opts.now });
   await audit(db, orgId, { type: "user", userId }, "message.manual_reply", { type: "conversation", id: conversationId }, { channel: conv.channel });
   return res;
 }

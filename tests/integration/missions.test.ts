@@ -116,7 +116,7 @@ describe("Respect des refus, préférences et pression commerciale", () => {
     const day1 = await withAgent(I.orgA, (db) => runAutopilot(db, I.orgA, NOW));
     expect(day1.emailsSent).toBeGreaterThan(0);
     const contacted = await q<{ customer_id: string }>(`select distinct c.customer_id from messages m join conversations c on c.id = m.conversation_id where m.organization_id = $1 and m.sent_autonomously`, [I.orgA]);
-    const day2 = await withAgent(I.orgA, (db) => runAutopilot(db, I.orgA, new Date(NOW.getTime() + 86_400_000 * 3)));
+    const day2 = await withAgent(I.orgA, (db) => runAutopilot(db, I.orgA, new Date(NOW.getTime() + 86_400_000)));
     expect(day2.pressureSkipped).toBeGreaterThan(0);
     const twice = await q<{ customer_id: string; n: number }>(
       `select c.customer_id, count(*)::int n from messages m join conversations c on c.id = m.conversation_id

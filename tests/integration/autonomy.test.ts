@@ -111,6 +111,11 @@ describe("LÉA autonome — journée de travail", () => {
     expect(r2.followupsSent).toBeGreaterThan(0);
     const attempts = await q<{ attempt: string }>(`select distinct ai_analysis->>'attempt' as attempt from messages where organization_id = $1 and ai_analysis->>'kind' = 'followup' and sent_autonomously`, [I.orgA]);
     expect(attempts.map((a) => a.attempt).sort()).toEqual(["1", "2"]);
+    // Plan de relance JONAS : 1re relance sur WhatsApp (contact consentant), 2e par e-mail.
+    const byChannel = await q<{ attempt: string; channel: string }>(
+      `select distinct ai_analysis->>'attempt' as attempt, channel::text from messages where organization_id = $1 and ai_analysis->>'kind' = 'followup' and sent_autonomously`, [I.orgA]);
+    expect(byChannel).toContainEqual({ attempt: "1", channel: "whatsapp" });
+    expect(byChannel).toContainEqual({ attempt: "2", channel: "email" });
     await withAgent(I.orgA, (db) => runAutopilot(db, I.orgA, day(20))); // jeudi 26 : 3e relance → validation humaine
     const third = await q<{ status: string }>(`select status from messages where organization_id = $1 and ai_analysis->>'kind' = 'followup' and ai_analysis->>'attempt' = '3'`, [I.orgA]);
     expect(third.length).toBeGreaterThan(0);
