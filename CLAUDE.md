@@ -24,6 +24,10 @@ Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'ar
    connexion utilisable ; envois autonomes limités à la plage horaire et au quota (sinon programmés). Aucun envoi réel sans connecteur
    réel configuré : activer un connecteur réel = activer des envois réels → approbation explicite du client requise.
    Une connexion simulée n'est jamais affichée « Connectée ». LinkedIn : jamais d'envoi automatique (CGU).
+   WhatsApp : consentement `consent_whatsapp`, message libre seulement < 24 h après le dernier message du client,
+   sinon modèle approuvé (`features/conversations/templates.ts`, variables remplies par le système, jamais par l'IA).
+11. **Discussion** : LÉA répond à partir de l'historique de la conversation et des faits vérifiés (`features/agent/answers.ts`) ;
+   ce qui n'a pas de donnée fiable (ex. délai de livraison) est annoncé comme « vérifié par le commercial » + tâche `reply`.
 7. **Remises** : politique configurable par organisation. Préréglage JONAS (1 %, transfert au-delà) jamais imposé aux autres.
 8. **Prix d'achat / marges** : table `product_purchase_costs` (owner/admin/manager) ; jamais dans un support client.
 9. **Fidélité produit** : ne jamais modifier packaging, logo, référence, EAN, textes, contenance, prix, couleurs, forme.

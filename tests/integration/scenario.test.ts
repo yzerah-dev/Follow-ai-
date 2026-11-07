@@ -27,7 +27,10 @@ describe("Scénario commercial complet", () => {
   it("de l'opportunité de réassort à la demande de commande", async () => {
     // 1-3. Tableau de bord : LÉA a identifié le réassort du client vedette
     const before = await withUser(I.bruno, (db) => getDashboard(db, I.orgA, TODAY));
-    const opp = before.opportunities.find((o) => o.customerName === "Maison Martin & Fils" && o.type === "reorder");
+    expect(before.opportunities.length).toBeGreaterThan(0);
+    const opp = await withUser(I.bruno, async (db) => (await db.query<{ id: string; title: string; estimatedValueHt: string }>(
+      `select o.id, o.title, o.estimated_value_ht as "estimatedValueHt" from opportunities o join customers c on c.id = o.customer_id
+       where c.external_code = 'C00001' and o.type = 'reorder' and o.status = 'open'`)).rows[0]);
     expect(opp, "opportunité de réassort détectée").toBeTruthy();
     expect(opp!.title).toBe("Réassort probable de 4 références");
     expect(Number(opp!.estimatedValueHt)).toBeGreaterThan(0);

@@ -28,7 +28,8 @@ describe("LÉA autonome — journée de travail", () => {
     expect(r.skipped).toBeUndefined();
     expect(r.errors).toEqual([]);
     expect(r.offersCreated).toBeGreaterThan(0);
-    expect(r.offersCreated).toBeLessThanOrEqual(20); // quota quotidien
+    const quota = (await q<{ n: number }>(`select daily_offer_limit as n from organization_settings where organization_id = $1`, [I.orgA]))[0]!.n;
+    expect(r.offersCreated).toBeLessThanOrEqual(quota); // quota quotidien
     expect(r.emailsSent).toBe(r.offersCreated - r.offersPendingApproval);
 
     const hero = await heroConversation();

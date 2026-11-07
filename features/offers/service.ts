@@ -10,6 +10,9 @@ import { clampDiscount } from "./policy";
 
 export type OfferActor = { userId: string };
 
+/** Aucune ligne vendable (prix inconnu, rupture sans date…) : ce n'est pas une panne, l'offre n'est simplement pas constructible. */
+export class OfferNotBuildable extends Error {}
+
 async function loadBuilderData(db: Db, orgId: string, customerId: string, productIds: string[]) {
   const customer = (await db.query<{ id: string; min_order_amount: string | null; franco_amount: string | null }>(
     `select id, min_order_amount, franco_amount from customers where id = $1 and organization_id = $2`, [customerId, orgId])).rows[0];
@@ -42,7 +45,7 @@ export async function createOfferDraft(
   const policy = await loadPolicy(db, orgId);
   const data = await loadBuilderData(db, orgId, args.customerId, args.items.map((i) => i.productId));
   const draft = buildOfferDraft({ ...data, items: args.items, policy, date: today });
-  if (!draft.lines.length) throw new Error(draft.excluded.map((e) => e.message).join(" ") || "Aucune ligne valide.");
+  if (!draft.lines.length) throw new OfferNotBuildable(draft.excluded.map((e) => e.message).join(" ") || "Aucune ligne valide.");
   // Plafond d'autonomie : au-delà, l'offre repasse en validation humaine.
   const autoApprove = args.autoApprove && (!args.autoApprove.maxTotalHt || dec(draft.totalHt).lte(dec(args.autoApprove.maxTotalHt))) ? args.autoApprove : undefined;
   const number = (await db.query<{ n: string }>(`select app.next_document_number($1, 'offer', 'OF') as n`, [orgId])).rows[0]!.n;

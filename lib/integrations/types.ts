@@ -1,11 +1,16 @@
 export type Channel = "email" | "whatsapp" | "linkedin" | "sms" | "phone";
 
+/** Modèle de message pré-approuvé (WhatsApp : obligatoire hors fenêtre de 24 h). */
+export type MessageTemplate = { name: string; language: string; params: string[] };
+
 export type OutboundMessage = {
   organizationId: string;
   messageId: string;
-  to: string;
+  channel: Channel;
+  to: string; // email ou numéro E.164
   subject: string | null;
   body: string;
+  template: MessageTemplate | null;
   attachments: { filename: string; storagePath: string; mimeType: string }[];
 };
 

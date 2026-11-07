@@ -1,6 +1,14 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-07 — ajout du mode autonome de LÉA._
+_Mise à jour : 2026-11-07 — discussions email + WhatsApp, mode autonome._
+
+## Discussions multicanales (2026-11-07)
+- **Conversations** : boîte unifiée filtrable (Toutes / Email / WhatsApp / À traiter), fil en bulles, badges (envoyé seul par LÉA,
+  programmé, modèle WhatsApp, relance n°), fenêtre WhatsApp de 24 h affichée, réponse humaine possible dans le fil.
+- **LÉA discute** : historique de conversation + réponses factuelles (prix, montant, validité, stock connu, franco, paiement, colisage,
+  minimum) ; jamais de délai ou de stock inventé (le commercial est prévenu par une tâche).
+- **WhatsApp** : premier contact et relances par modèles approuvés (PDF joint), messages libres dans les 24 h, STOP → opposition,
+  numéros normalisés E.164, webhook Meta signé. Simulé en démo ; connecteur Meta écrit mais **non testé** (pas de compte).
 
 ## Mode autonome (2026-11-07)
 Décision client : **JONAS en mode autonome, remise ≤ 1 % envoyée sans validation**. Livré et testé :
@@ -49,10 +57,10 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 56/56 |
-| `npm run test:integration` (PostgreSQL 16) | ✅ 31/31 (scénario supervisé, 9 autonomie, 18 RLS, 3 imports) |
+| `npm run test` | ✅ 69/69 |
+| `npm run test:integration` (PostgreSQL 16) | ✅ 41/41 (scénario supervisé, 9 autonomie, 10 discussions WhatsApp/email, 18 RLS, 3 imports) |
 | `npm run build` | ✅ |
-| `npm run e2e` (Playwright, Chromium) | ✅ 4/4 (dont mode autonome réglé et lancé via l'interface) |
+| `npm run e2e` (Playwright, Chromium) | ✅ 5/5 (dont mode autonome et discussion WhatsApp via l'interface) |
 
 ## Problèmes connus
 - Rate limit en mémoire (par instance).

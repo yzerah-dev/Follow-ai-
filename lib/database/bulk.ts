@@ -15,6 +15,8 @@ export async function insertMany(db: Db, table: string, columns: string[], rows:
       });
       return `(${ph.join(",")})`;
     });
+    const bad = chunk.findIndex((r) => r.length !== columns.length);
+    if (bad >= 0) throw new Error(`insertMany(${table}) : la ligne ${i + bad} a ${chunk[bad]!.length} valeurs pour ${columns.length} colonnes.`);
     await db.query(`insert into ${table} (${columns.join(",")}) values ${tuples.join(",")} ${suffix}`, values);
   }
 }

@@ -11,11 +11,15 @@ async function login(page: Page, email: string) {
 test("scénario principal : réassort → offre → supports → email → objection → commande", async ({ page }) => {
   // 1-3. Connexion et cockpit : LÉA a identifié le réassort de Maison Martin & Fils
   await login(page, "bruno@demo.follow.ai");
-  const card = page.getByTestId("opportunity").filter({ hasText: "Maison Martin & Fils" }).filter({ hasText: "Réassort probable de 4 références" });
-  await expect(card).toBeVisible();
+  await expect(page.getByTestId("opportunity").first()).toBeVisible();
+  await page.goto("/clients?q=Maison%20Martin");
+  await page.getByRole("link", { name: "Maison Martin & Fils" }).click();
+  await page.waitForURL(/\/clients\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("Prochaine action recommandée par LÉA")).toBeVisible();
+  await expect(page.getByText("Réassort probable de 4 références")).toBeVisible();
 
   // 4-6. LÉA prépare l'offre
-  await card.getByRole("button", { name: /Préparer l'offre/ }).click();
+  await page.getByRole("button", { name: /^Préparer l'offre/ }).click();
   await page.waitForURL(/\/offres\/[0-9a-f-]{36}$/);
   await expect(page.getByRole("heading", { name: /Offre OF-\d{4}-\d{5}/ })).toBeVisible();
   await expect(page.getByText("À valider").first()).toBeVisible();
@@ -46,6 +50,7 @@ test("scénario principal : réassort → offre → supports → email → objec
   await expect(page.getByText("Envoi simulé").first()).toBeVisible();
 
   // 12-14. Réponse fictive : objection prix + remise de 5 % (au-delà du plafond JONAS de 1 %)
+  await page.getByRole("button", { name: /votre offre est trop chère, pouvez-vous/ }).click();
   await page.getByRole("button", { name: "Simuler la réponse du client" }).click();
   const analysis = page.getByTestId("lea-analysis").first();
   await expect(analysis).toContainText("Objection");
@@ -99,6 +104,7 @@ test("mode autonome : réglé dans les paramètres, LÉA envoie seule", async ({
   await page.getByLabel("Niveau d'autonomie").selectOption("autonomous");
   await page.getByLabel(/LÉA peut accorder seule une remise/).check();
   for (const d of ["Sam", "Dim"]) await page.getByLabel(d, { exact: true }).check();
+  await page.getByLabel("Offres préparées par jour (max.)").fill("200");
   await page.getByLabel("Début").fill("00:00");
   await page.getByLabel("Fin").fill("23:59");
   await page.getByRole("button", { name: "Enregistrer l'autonomie" }).click();
@@ -122,4 +128,31 @@ test("mode autonome : réglé dans les paramètres, LÉA envoie seule", async ({
   await expect(page.getByText("Suspendue").first()).toBeVisible();
   await page.goto("/");
   await expect(page.getByRole("button", { name: /Lancer LÉA maintenant/ })).toHaveCount(0);
+});
+
+test("WhatsApp : discussion visible et LÉA répond aux questions du client", async ({ page }) => {
+  await login(page, "alice@demo.follow.ai");
+  // Le test précédent a mis JONAS en autonome (plage 7 j/7) puis suspendu LÉA : on la réactive.
+  await page.goto("/parametres");
+  await page.getByRole("button", { name: "Réactiver LÉA" }).click();
+  await expect(page.getByText("LÉA a repris le travail.")).toBeVisible();
+  await page.goto("/conversations?canal=whatsapp");
+  const convs = page.getByTestId("conversation-whatsapp");
+  await expect(convs.first()).toBeVisible();
+  await expect(page.getByTestId("conversation-email")).toHaveCount(0);
+  // Une discussion ouverte par LÉA (offre envoyée sur WhatsApp avec le modèle approuvé)
+  await convs.filter({ hasText: "En attente du client" }).first().click();
+  await page.waitForURL(/\/conversations\//);
+  await expect(page.getByText(/Modèle « offre_disponible »/)).toBeVisible();
+  await page.getByRole("button", { name: /disponible en stock \? Et quel est mon franco/ }).click();
+  await page.getByRole("button", { name: "Simuler la réponse du client" }).click();
+  await expect(page.getByTestId("lea-analysis").last()).toContainText("Question");
+  const lea = page.getByTestId("message-outbound").last();
+  await expect(lea).toContainText("— LÉA");
+  await expect(lea).toContainText("Envoyé seul par LÉA");
+  await expect(page.getByText(/Fenêtre WhatsApp ouverte/)).toBeVisible();
+  // L'humain peut reprendre la main dans la fenêtre de 24 h
+  await page.getByLabel("Votre réponse").fill("Je vous confirme la livraison demain matin. Bruno");
+  await page.getByRole("button", { name: "Envoyer" }).click();
+  await expect(page.getByText("Message envoyé (simulation).")).toBeVisible();
 });

@@ -30,6 +30,14 @@
 
 Chaque exécution est tracée dans `agent_runs` (fournisseur, modèle, jetons, coût estimé) et `agent_decisions` (justification).
 
+## Discussion (email et WhatsApp)
+À chaque message du client : analyse (intention, objection, remise, quantités) → **faits vérifiés** (`answers.ts` : prix et colisage des
+lignes citées, montant, validité, disponibilité connue, franco, minimum, conditions de paiement) → réponse rédigée avec l'**historique**
+de la conversation (12 derniers messages, encapsulés comme données) et le style du canal (WhatsApp : court, sans formule répétée,
+signé « — LÉA » ; email : formules complètes). Ce qui n'a pas de donnée fiable (délai de livraison, disponibilité inconnue…) n'est jamais
+inventé : LÉA l'annonce au client et crée une tâche « Répondre » pour le commercial. Un humain peut répondre lui-même à tout moment
+dans le fil (zone « Votre réponse »).
+
 ## Comportement commercial
 Proactive, persuasive, chaleureuse, directe, orientée conversion ; vouvoiement ; propose une action concrète
 (commande, visio, showroom, portail B2B) ; ne prétend jamais personnaliser sans données ; n'invente aucun fait.

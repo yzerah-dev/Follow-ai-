@@ -27,6 +27,10 @@ export type ObjectionCtx = {
   escalate: boolean;
   senderName: string;
   companyName: string;
+  channel: "email" | "whatsapp";
+  answers: string[]; // réponses factuelles calculées (features/agent/answers.ts)
+  unknownLabels: string[]; // sujets sans donnée fiable → transmis au commercial
+  turn: number; // nombre de réponses déjà envoyées dans la conversation
 };
 
 export function greeting(contact: ContactCtx): string {
@@ -76,6 +80,7 @@ ${ctx.companyName}`;
 
 const RULES: { objection: Objection; patterns: RegExp[] }[] = [
   { objection: "competition", patterns: [/concurren/i, /autre fournisseur/i, /ailleurs/i, /moins cher chez/i] },
+  { objection: "delivery", patterns: [/frais de (port|livraison)/i, /\bfranco\b/i] }, // avant « trop élevé » : « frais de port trop élevés »
   { objection: "too_expensive", patterns: [/trop cher/i, /prix (trop )?élevé/i, /trop élevé/i, /\bremise\b/i, /réduction/i, /geste commercial/i, /baisser (le|vos) prix/i] },
   { objection: "stock_available", patterns: [/encore du stock/i, /il nous en reste/i, /stock suffisant/i, /déjà (du|en) stock/i, /pas encore écoulé/i] },
   { objection: "budget", patterns: [/budget/i, /trésorerie/i] },
@@ -95,7 +100,9 @@ export function mockAnalyzeReply(text: string): ReplyAnalysis {
     return { intent: "unsubscribe", objection: null, requestedDiscountPct: null, requestedQuantity: null, targetPrice: null, sentiment: "negative", summary: "Le client demande à ne plus être sollicité.", nextAction: "Inscrire l'adresse en liste d'opposition et cesser les envois." };
   if (/absent|out of office|congés jusqu/i.test(t) && t.length < 400)
     return { intent: "out_of_office", objection: null, requestedDiscountPct: null, requestedQuantity: null, targetPrice: null, sentiment: "neutral", summary: "Réponse automatique d'absence.", nextAction: "Reprogrammer la relance après la date de retour." };
-  const objection = RULES.find((r) => r.patterns.some((p) => p.test(t)))?.objection ?? null;
+  let objection = RULES.find((r) => r.patterns.some((p) => p.test(t)))?.objection ?? null;
+  // « Quel est mon franco ? », « Quel délai ? » : ce sont des questions, pas des objections.
+  if ((objection === "delivery" || objection === "lead_time") && /\?/.test(t)) objection = null;
   const accept = /(ok pour|c'est validé|je valide|bon pour accord|nous prenons|vous pouvez lancer|confirmons la commande)/i.test(t);
   const meeting = /(rendez-vous|\brdv\b|visio|showroom|passer nous voir|m'appeler|appelez-moi)/i.test(t);
   const base = {
@@ -127,14 +134,22 @@ const OBJECTION_ARGUMENTS: Record<Objection, string> = {
 };
 
 export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
-  const sign = ["", "Bien cordialement,", "", ctx.senderName, ctx.companyName];
+  const wa = ctx.channel === "whatsapp";
   const subject = ctx.offer ? `RE: Proposition ${ctx.offer.number}` : "RE: Votre message";
+  // WhatsApp : ton de messagerie, court ; pas de formule d'appel répétée au fil de la discussion.
+  const hello = wa ? (ctx.turn > 0 ? null : greeting(ctx.contact).replace(/,$/, " !")) : greeting(ctx.contact);
+  const sign = wa ? [`— LÉA, ${ctx.companyName}`] : ["", "Bien cordialement,", "", ctx.senderName, ctx.companyName];
+  const facts = ctx.answers.length ? (wa ? ctx.answers.map((a) => `• ${a}`) : ["", ...ctx.answers.map((a) => `• ${a}`)]) : [];
+  const unknownLine = ctx.unknownLabels.length
+    ? `Concernant ${ctx.unknownLabels.join(" et ")}, je vérifie auprès de votre commercial et je reviens vers vous très vite${wa ? "." : " avec une réponse précise."}`
+    : null;
+  const join = (parts: (string | null)[]) => parts.filter((x): x is string => x !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+
   if (ctx.analysis.intent === "accept") {
     return {
       subject,
-      body: [greeting(ctx.contact), "", "Je vous remercie pour votre confirmation.", "",
-        `Votre commande${ctx.offer ? ` correspondant à notre proposition ${ctx.offer.number}` : ""} est bien prise en compte et transmise à nos équipes. Vous recevrez la confirmation de commande dès son enregistrement.`,
-        ...sign].join("\n"),
+      body: join([hello, wa ? null : "", wa ? "Merci pour votre confirmation !" : "Je vous remercie pour votre confirmation.", wa ? null : "",
+        `Votre commande${ctx.offer ? ` (proposition ${ctx.offer.number})` : ""} est bien prise en compte et transmise à nos équipes. Vous recevrez la confirmation de commande dès son enregistrement.`, ...sign]),
       proposedDiscountPct: null,
       rationale: "Accord du client : confirmation et préparation de la demande de commande.",
     };
@@ -142,30 +157,37 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
   if (ctx.analysis.intent === "meeting_request") {
     return {
       subject,
-      body: [greeting(ctx.contact), "", "Avec plaisir.", "",
-        "Votre commercial vous contactera très prochainement pour convenir ensemble d'un créneau, en visioconférence ou au showroom selon votre préférence.",
-        ...sign].join("\n"),
+      body: join([hello, wa ? null : "", "Avec plaisir.", "Votre commercial vous contacte très prochainement pour convenir d'un créneau, en visioconférence ou au showroom selon votre préférence.", ...sign]),
       proposedDiscountPct: null,
       rationale: "Demande de rendez-vous : prise de contact par le commercial (aucun créneau inventé).",
     };
   }
+  if (ctx.analysis.intent === "question" || (ctx.answers.length && !ctx.analysis.objection)) {
+    return {
+      subject,
+      body: join([hello, wa ? null : "", wa ? null : "Merci pour votre question.", ...facts, unknownLine ? (wa ? unknownLine : `\n${unknownLine}`) : null,
+        wa ? "Je vous prépare la commande sur cette base ?" : "\nSouhaitez-vous que je prépare la commande sur cette base ?", ...sign]),
+      proposedDiscountPct: null,
+      rationale: `Réponse factuelle à partir des données (${ctx.answers.length} élément(s))${ctx.unknownLabels.length ? `, ${ctx.unknownLabels.join(", ")} transmis au commercial` : ""}.`,
+    };
+  }
+
   const o = ctx.analysis.objection ?? "no_response";
-  const parts = [greeting(ctx.contact), "", "Je vous remercie pour votre retour."];
-  parts.push("", OBJECTION_ARGUMENTS[o]);
+  const parts: (string | null)[] = [hello, wa ? null : "", wa ? null : "Je vous remercie pour votre retour.", wa ? null : "", OBJECTION_ARGUMENTS[o], ...facts];
   let proposed: number | null = null;
   if (ctx.analysis.requestedDiscountPct !== null || o === "too_expensive" || o === "competition") {
     if (ctx.escalate) {
-      parts.push("", `Votre demande dépasse ce que je suis en mesure de vous accorder directement : je la transmets dès aujourd'hui à votre commercial, qui reviendra vers vous rapidement.${ctx.analysis.requestedQuantity ? ` J'ai bien noté la quantité envisagée (${ctx.analysis.requestedQuantity}).` : ""}`);
+      parts.push(wa ? null : "", `Votre demande dépasse ce que je suis en mesure de vous accorder directement : je la transmets dès aujourd'hui à votre commercial, qui revient vers vous rapidement.${ctx.analysis.requestedQuantity ? ` J'ai bien noté la quantité envisagée (${ctx.analysis.requestedQuantity}).` : ""}`);
     } else if (ctx.allowedDiscountPct && ctx.allowedDiscountPct > 0) {
       proposed = ctx.allowedDiscountPct;
-      parts.push("", `Pour concrétiser votre commande, je peux vous proposer un geste de ${ctx.allowedDiscountPct.toLocaleString("fr-FR")} % sur cette offre${ctx.offer ? ` (${ctx.offer.number})` : ""}.`);
+      parts.push(wa ? null : "", `Pour concrétiser votre commande, je peux vous accorder un geste de ${ctx.allowedDiscountPct.toLocaleString("fr-FR")} % sur cette offre${ctx.offer ? ` (${ctx.offer.number})` : ""}.`);
     }
   }
-  if (o !== "refusal") parts.push("", "Souhaitez-vous que je prépare la commande sur cette base, ou préférez-vous en discuter lors d'un rendez-vous en visioconférence ?");
-  parts.push("", "Bien cordialement,", "", ctx.senderName, ctx.companyName);
+  if (unknownLine) parts.push(wa ? null : "", unknownLine);
+  if (o !== "refusal") parts.push(wa ? null : "", wa ? "On valide la commande sur cette base ?" : "Souhaitez-vous que je prépare la commande sur cette base, ou préférez-vous en discuter lors d'un rendez-vous en visioconférence ?");
   return {
-    subject: ctx.offer ? `RE: Proposition ${ctx.offer.number}` : "RE: Votre message",
-    body: parts.join("\n"),
+    subject,
+    body: join([...parts, ...sign]),
     proposedDiscountPct: proposed,
     rationale: ctx.escalate
       ? "Demande au-delà du plafond de remise : transfert au commercial, valeur de l'offre défendue."

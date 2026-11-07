@@ -28,6 +28,8 @@ export type AutonomyAction =
       objection: string | null;
       escalate: boolean;
       discountPct: number | null;
+      answered?: number; // réponses factuelles disponibles
+      unanswered?: number; // sujets sans donnée fiable (transmis au commercial)
       guardNotes: string[];
       identityVerified: boolean;
       injectionSuspected: boolean;
@@ -59,7 +61,14 @@ export function decideAutonomy(s: AutonomySettings, a: AutonomyAction): Autonomy
   if (!a.identityVerified) return approval("Expéditeur non identifié avec certitude.");
   if (a.injectionSuspected) return approval("Contenu suspect dans le message du client : lecture humaine requise.");
   if (a.escalate) return approval("Négociation transférée au commercial (au-delà de la politique ou concurrence).");
-  if (a.intent === "question" || a.intent === "other") return approval("Question ouverte : réponse humaine pour ne rien inventer.");
+  if (a.intent === "question" || a.intent === "other") {
+    const answered = a.answered ?? 0;
+    const unanswered = a.unanswered ?? 0;
+    if (!answered && !unanswered) return approval("Message sans question identifiable : lecture humaine.");
+    if (unanswered && s.level === "semi_autonomous") return approval("Question partiellement sans réponse : validation humaine.");
+    if (!answered) return auto("Accusé de réception : le commercial confirme les points sans donnée fiable.");
+    return auto(unanswered ? "Réponse factuelle ; les points sans donnée fiable sont transmis au commercial." : "Réponse factuelle à partir des données.");
+  }
   if (a.discountPct !== null && a.discountPct > 0) {
     if (s.requireDiscountApproval) return approval("Remise proposée : validation exigée par la politique.");
     if (s.level === "semi_autonomous") return approval("Mode semi-autonome : les remises sont validées par un humain.");

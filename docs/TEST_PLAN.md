@@ -4,10 +4,10 @@
 |---|---|---|
 | Types | `npm run typecheck` | TypeScript strict (`noUncheckedIndexedAccess`) |
 | Lint | `npm run lint` | eslint-config-next + typescript |
-| Unitaires | `npm run test` | 56 tests : règles d'autonomie, plage d'envoi, décimal, analytique, prix, offres, politique JONAS, opportunités, analyse des réponses, rédaction, garde-fous, injection, chiffrement, webhooks, rate limit, stockage, imports |
-| Intégration | `npm run test:integration` | PostgreSQL réel (base `follow_ai_test`, recréée) : scénario supervisé (services), mode autonome de bout en bout (9 cas), 18 tests RLS, imports CSV/XLSX + réimport |
+| Unitaires | `npm run test` | 69 tests : WhatsApp (E.164, 24 h, modèles, signature et API Meta), réponses factuelles, style par canal, règles d'autonomie, plage d'envoi, décimal, analytique, prix, offres, politique JONAS, opportunités, analyse des réponses, rédaction, garde-fous, injection, chiffrement, webhooks, rate limit, stockage, imports |
+| Intégration | `npm run test:integration` | PostgreSQL réel (base `follow_ai_test`, recréée) : scénario supervisé (services), mode autonome de bout en bout (9 cas), discussions WhatsApp/email (10 cas), 18 tests RLS, imports CSV/XLSX + réimport |
 | Build | `npm run build` | build de production Next.js |
-| E2E | `npm run build && npm run e2e` | Playwright (base `follow_ai_e2e`, port 3100) : scénario principal supervisé, lecture seule, isolation inter-entreprises, mode autonome + interrupteur |
+| E2E | `npm run build && npm run e2e` | Playwright (base `follow_ai_e2e`, port 3100) : scénario principal supervisé, lecture seule, isolation inter-entreprises, mode autonome + interrupteur, discussion WhatsApp |
 
 ## Scénario principal (automatisé deux fois : services + interface)
 1. Connexion · 2. Tableau de bord · 3. Réassort probable identifié (Maison Martin & Fils, 4 références) ·

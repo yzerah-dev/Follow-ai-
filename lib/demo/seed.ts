@@ -124,10 +124,10 @@ export async function seedDemo(databaseUrl: string, opts: { today?: string } = {
         }
         await c.query(
           `insert into organization_settings (organization_id, max_auto_discount_pct, require_discount_approval, policy_name, brand, dormant_after_days, reorder_lookahead_days,
-             autonomy_level, autonomous_max_offer_ht)
-           values ($1, $2, $5, $3, $4, 120, 21, $6, $7)`,
+             autonomy_level, autonomous_max_offer_ht, daily_offer_limit)
+           values ($1, $2, $5, $3, $4, 120, 21, $6, $7, $8)`,
           [orgId, spec.policy.maxAuto, spec.policy.name, { primaryColor: spec.brandHex, secondaryColor: "#0F172A", fontFamily: "Helvetica", companyName: spec.name.split(" — ")[0], tagline: "Données de démonstration" },
-            spec.policy.requireDiscountApproval, spec.policy.autonomy, spec.policy.maxOfferHt],
+            spec.policy.requireDiscountApproval, spec.policy.autonomy, spec.policy.maxOfferHt, spec.key === "A" ? 60 : 20],
         );
       }
     } finally {
@@ -237,8 +237,11 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
       const last = hero ? (spec.key === "A" ? "Martin" : "Lambert") : r.pick(LAST);
       const salutation = hero ? (spec.key === "A" ? "M." : "Mme") : r.pick(["M.", "Mme"]);
       contactIds.push(cid);
-      contactRows.push([cid, orgId, salutation, first, last, `${slug(first)}.${slug(last)}${i}${k}@${slug(name)}.demo`, `+33 6 ${r.int(10, 99)} ${r.int(10, 99)} ${r.int(10, 99)} ${r.int(10, 99)}`,
-        k === 0 ? "Gérant" : r.pick(FUNCTIONS), !hero ? r.chance(0.85) : true, r.chance(0.3), r.chance(0.2), "Démo — consentement fictif"]);
+      const mobile = `+336${String(r.int(10000000, 99999999))}`;
+      // 1 client sur 6 n'est joignable que par WhatsApp (pas de consentement email) : LÉA discute avec lui sur WhatsApp.
+      const whatsappOnly = !hero && i % 6 === 2 && k === 0;
+      contactRows.push([cid, orgId, salutation, first, last, `${slug(first)}.${slug(last)}${i}${k}@${slug(name)}.demo`, `+33 6 ${mobile.slice(4, 6)} ${mobile.slice(6, 8)} ${mobile.slice(8, 10)} ${mobile.slice(10, 12)}`, mobile,
+        k === 0 ? "Gérant" : r.pick(FUNCTIONS), whatsappOnly ? false : !hero ? r.chance(0.85) : true, r.chance(0.3), whatsappOnly || hero || r.chance(0.2), "Démo — consentement fictif"]);
       linkRows.push([orgId, id, cid, k === 0 ? "Gérant" : r.pick(FUNCTIONS), k === 0, true]);
     }
   }
@@ -246,7 +249,7 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
     "id", "organization_id", "external_code", "legal_name", "trade_name", "country", "address_line1", "postal_code", "city", "phone", "email", "website",
     "owner_user_id", "segment", "status", "payment_terms", "min_order_amount", "franco_amount",
   ], customerRows);
-  await insertMany(db, "contacts", ["id", "organization_id", "salutation", "first_name", "last_name", "email", "phone", "title", "consent_email", "consent_sms", "consent_whatsapp", "consent_source"], contactRows);
+  await insertMany(db, "contacts", ["id", "organization_id", "salutation", "first_name", "last_name", "email", "phone", "mobile", "title", "consent_email", "consent_sms", "consent_whatsapp", "consent_source"], contactRows);
   // Contacts partagés : quelques contacts rattachés à une seconde société (ex. acheteur d'un groupement)
   for (let k = 0; k < 6; k++) linkRows.push([orgId, customers[10 + k * 7]!.id, contactIds[k * 11 + 3]!, "Acheteur groupement", false, true]);
   await insertMany(db, "customer_contacts", ["organization_id", "customer_id", "contact_id", "job_function", "is_primary", "can_receive_offers"], dedupeLinks(linkRows));
@@ -328,6 +331,7 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
   // ---------------- Connexions (état réel : rien n'est connecté) ----------------
   const conns: [string, string, string, boolean, string][] = [
     ["email", "simulated", "not_connected", true, "Email — mode simulation (aucun envoi réel)"],
+    ["whatsapp", "simulated", "not_connected", true, "WhatsApp — mode simulation (aucun envoi réel)"],
     ["email", "gmail", "needs_configuration", false, "Gmail (Google Workspace)"],
     ["email", "microsoft365", "needs_configuration", false, "Microsoft 365"],
     ["whatsapp", "whatsapp_cloud", "not_connected", false, "WhatsApp Business Platform"],
@@ -335,7 +339,9 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
     ["sms", "sms_provider", "not_connected", false, "SMS professionnel"],
     ["phone", "telephony", "not_connected", false, "Téléphonie"],
   ];
-  await insertMany(db, "communication_connections", ["organization_id", "channel", "provider", "status", "simulation_enabled", "display_name"], conns.map((x) => [orgId, ...x]));
+  // Modèles WhatsApp déclarés (en réel : à faire approuver par Meta avec les textes de features/conversations/templates.ts)
+  await insertMany(db, "communication_connections", ["organization_id", "channel", "provider", "status", "simulation_enabled", "display_name", "config"],
+    conns.map((x) => [orgId, ...x, x[0] === "whatsapp" ? { approvedTemplates: ["offre_disponible", "relance_offre"], templatesStatus: x[1] === "simulated" ? "déclarés (simulation)" : "à soumettre à Meta" } : {}]));
 
   // ---------------- Conversations historiques simulées ----------------
   for (const cu of customers.slice(1, 6)) {
@@ -350,6 +356,24 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
     await insertMany(db, "messages", ["organization_id", "conversation_id", "direction", "channel", "from_address", "to_address", "subject", "body", "status", "sent_at", "received_at", "handled", "provider_message_id"], [
       [orgId, conv.rows[0]!.id, "outbound", "email", "commercial@demo.follow.ai", contact.email, "Commande du mois", "Bonjour,\n\nVoici notre proposition pour votre commande du mois.\n\nBien cordialement.", "simulated_sent", addDays(today, -14).toISOString(), null, true, `demo-${crypto.randomUUID()}`],
       [orgId, conv.rows[0]!.id, "inbound", "email", contact.email, "commercial@demo.follow.ai", "RE: Commande du mois", "Bonjour,\n\nC'est validé pour nous, merci.\n\nCordialement.", "received", null, addDays(today, -12).toISOString(), true, `demo-${crypto.randomUUID()}`],
+    ]);
+  }
+
+  // ---------------- Discussions WhatsApp historiques (clients joignables uniquement par WhatsApp) ----------------
+  for (const idx of [2, 8, 14]) {
+    const cu = customers[idx]!;
+    const ct = (await db.query<{ contact_id: string; mobile: string }>(
+      `select cc.contact_id, c.mobile from customer_contacts cc join contacts c on c.id = cc.contact_id where cc.customer_id = $1 and cc.is_primary limit 1`, [cu.id])).rows[0];
+    if (!ct) continue;
+    const t0 = addDays(today, -9);
+    const at = (h: number) => new Date(t0.getTime() + h * 3_600_000).toISOString();
+    const conv = await db.query<{ id: string }>(
+      `insert into conversations (organization_id, customer_id, contact_id, channel, subject, status, last_message_at, last_inbound_at) values ($1,$2,$3,'whatsapp',null,'closed',$4,$5) returning id`,
+      [orgId, cu.id, ct.contact_id, at(9.3), at(9.1)]);
+    await insertMany(db, "messages", ["organization_id", "conversation_id", "direction", "channel", "from_address", "to_address", "body", "status", "sent_at", "received_at", "handled", "ai_generated", "provider_message_id"], [
+      [orgId, conv.rows[0]!.id, "inbound", "whatsapp", ct.mobile, null, "Bonjour, ma dernière livraison est-elle partie ?", "received", null, at(9), true, false, `demo-wa-${crypto.randomUUID()}`],
+      [orgId, conv.rows[0]!.id, "outbound", "whatsapp", "LÉA (WhatsApp Business)", ct.mobile, "Bonjour ! Je vérifie auprès de la logistique et votre commercial vous confirme la date d'expédition dans la journée. — LÉA", "simulated_sent", at(9.05), null, true, true, `demo-wa-${crypto.randomUUID()}`],
+      [orgId, conv.rows[0]!.id, "inbound", "whatsapp", ct.mobile, null, "Super, merci 👍", "received", null, at(9.1), true, false, `demo-wa-${crypto.randomUUID()}`],
     ]);
   }
 

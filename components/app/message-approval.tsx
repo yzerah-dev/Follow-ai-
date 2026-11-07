@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { decideMessageAction, simulateReplyAction, type ActionResult } from "@/app/actions/commercial";
+import { decideMessageAction, sendManualReplyAction, simulateReplyAction, type ActionResult } from "@/app/actions/commercial";
 
 export function MessageApproval({ messageId, conversationId, subject, body, writable, simulatedChannel }: { messageId: string; conversationId: string; subject: string; body: string; writable: boolean; simulatedChannel: boolean }) {
   const [s, setS] = useState(subject);
@@ -34,6 +34,9 @@ export function MessageApproval({ messageId, conversationId, subject, body, writ
 }
 
 const SAMPLES = [
+  "Bonjour, c'est bien disponible en stock ? Et quel est mon franco de port ?",
+  "Jusqu'à quand l'offre est valable ? Et quel délai de livraison ?",
+  "C'est un peu cher, vous pouvez faire un geste de 1 % ?",
   "Bonjour, votre offre est trop chère, pouvez-vous nous faire une remise de 5 % ?",
   "Bonjour, nous avons encore du stock, revenez vers nous le mois prochain.",
   "C'est validé pour nous, vous pouvez lancer la commande.",
@@ -49,8 +52,8 @@ export function SimulateReply({ conversationId }: { conversationId: string }) {
       <p className="text-[12px] font-semibold uppercase tracking-wide text-warning">Outil de démonstration — simuler une réponse client</p>
       <div className="flex flex-wrap gap-1.5">
         {SAMPLES.map((x) => (
-          <button key={x} onClick={() => setText(x)} className="rounded-full border border-warning/30 bg-surface px-2.5 py-1 text-[11.5px] hover:bg-warning-soft">
-            {x.slice(0, 42)}…
+          <button key={x} onClick={() => setText(x)} title={x} aria-label={x} className="rounded-full border border-warning/30 bg-surface px-2.5 py-1 text-[11.5px] hover:bg-warning-soft">
+            {x.length > 44 ? `${x.slice(0, 44)}…` : x}
           </button>
         ))}
       </div>
@@ -59,6 +62,44 @@ export function SimulateReply({ conversationId }: { conversationId: string }) {
         <Button variant="secondary" disabled={pending || !text.trim()} onClick={() => start(async () => setResult(await simulateReplyAction(conversationId, text)))}>
           {pending ? "Réception et analyse par LÉA…" : "Simuler la réponse du client"}
         </Button>
+        {result ? <span className={result.ok ? "text-[12.5px] text-success" : "text-[12.5px] text-danger"}>{result.ok ? result.message : result.error}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+/** Zone de réponse : un humain peut reprendre la main à tout moment. */
+export function ReplyComposer({ conversationId, channel, blockedReason }: { conversationId: string; channel: "email" | "whatsapp"; blockedReason: string | null }) {
+  const [text, setText] = useState("");
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult | null>(null);
+  return (
+    <div className="rounded-xl border border-border bg-surface p-3 shadow-card">
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={channel === "whatsapp" ? 2 : 4}
+        maxLength={channel === "whatsapp" ? 4096 : 8000}
+        placeholder={channel === "whatsapp" ? "Écrire sur WhatsApp en votre nom…" : "Répondre par email en votre nom…"}
+        aria-label="Votre réponse"
+        disabled={!!blockedReason}
+        className="border-0 shadow-none focus:ring-0"
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={pending || !text.trim() || !!blockedReason}
+          onClick={() =>
+            start(async () => {
+              const r = await sendManualReplyAction(conversationId, text);
+              setResult(r);
+              if (r.ok) setText("");
+            })
+          }
+        >
+          <Send /> {pending ? "Envoi…" : "Envoyer"}
+        </Button>
+        <span className="text-[12px] text-faint">{blockedReason ?? "Vous reprenez la main : LÉA continue sur les prochains messages du client."}</span>
         {result ? <span className={result.ok ? "text-[12.5px] text-success" : "text-[12.5px] text-danger"}>{result.ok ? result.message : result.error}</span> : null}
       </div>
     </div>

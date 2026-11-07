@@ -22,8 +22,8 @@ const CHANNELS = [
 export default async function ConnectionsPage() {
   const { rows, role } = await db(async (d, ctx) => ({
     role: ctx.org.role,
-    rows: (await d.query<{ id: string; channel: string; provider: string; status: string; simulation_enabled: boolean; display_name: string | null; last_error: string | null }>(
-      `select id, channel, provider, status, simulation_enabled, display_name, last_error from communication_connections where organization_id = $1 order by channel, provider`, [ctx.org.organizationId])).rows,
+    rows: (await d.query<{ id: string; channel: string; provider: string; status: string; simulation_enabled: boolean; display_name: string | null; last_error: string | null; config: { approvedTemplates?: string[]; templatesStatus?: string } }>(
+      `select id, channel, provider, status, simulation_enabled, display_name, last_error, config from communication_connections where organization_id = $1 order by channel, provider`, [ctx.org.organizationId])).rows,
   }));
   return (
     <>
@@ -64,6 +64,12 @@ export default async function ConnectionsPage() {
                                 {adapter.limitations.join(" ")}
                               </p>
                             </div>
+                          ) : null}
+                          {c.config?.approvedTemplates?.length ? (
+                            <p className="mt-1 text-[12px] text-subtle">
+                              <span className="font-medium text-foreground">Modèles WhatsApp : </span>
+                              {c.config.approvedTemplates.join(", ")} ({c.config.templatesStatus ?? "statut inconnu"})
+                            </p>
                           ) : null}
                           {c.last_error ? <p className="mt-1 text-[12px] text-danger">{c.last_error}</p> : null}
                         </div>

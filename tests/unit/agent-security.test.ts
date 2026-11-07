@@ -16,8 +16,9 @@ describe("LÉA — analyse des réponses (IA simulée)", () => {
     ["Nous avons encore du stock, revenez plus tard.", "objection", "stock_available"],
     ["Un autre fournisseur nous propose mieux.", "objection", "competition"],
     ["Pas de budget ce trimestre.", "objection", "budget"],
-    ["Quels sont les frais de port ?", "objection", "delivery"],
-    ["Quel délai pour la livraison ?", "objection", "delivery"],
+    ["Quels sont les frais de port ?", "question", null],
+    ["Les frais de port sont trop élevés pour nous.", "objection", "delivery"],
+    ["Quel délai pour la livraison ?", "question", null],
     ["Pas besoin pour le moment.", "objection", "no_need"],
     ["Non merci.", "objection", "refusal"],
     ["C'est validé pour nous, vous pouvez lancer la commande.", "accept", null],
@@ -45,6 +46,10 @@ describe("LÉA — rédaction", () => {
     newProductNames: [],
     senderName: "Bruno",
     companyName: "JONAS",
+    channel: "email" as const,
+    answers: [] as string[],
+    unknownLabels: [] as string[],
+    turn: 0,
   };
   it("vouvoie et personnalise seulement avec historique", () => {
     const p = mockOfferEmail({ ...base, history: { invoiceCount: 8, usualReferences: ["R1"] } });

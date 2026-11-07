@@ -14,7 +14,7 @@
 
 ## 2. Vercel
 Variables : `DATABASE_URL`, `SESSION_SECRET` (≥ 32 car.), `APP_ENCRYPTION_KEY` (32 octets base64), `LLM_PROVIDER`, `ANTHROPIC_API_KEY`,
-`LLM_MODEL`, `CRON_SECRET`, `WEBHOOK_SIGNING_SECRET`, `DEMO_TOOLS=false`.
+`LLM_MODEL`, `CRON_SECRET`, `WEBHOOK_SIGNING_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `DEMO_TOOLS=false`.
 Crons (`vercel.json`, en-tête `Authorization: Bearer $CRON_SECRET` ajouté par Vercel) :
 `/api/cron/daily-plan` (jours ouvrés, journée de travail de LÉA) et `/api/cron/dispatch` (toutes les 15 min, envois programmés).
 La fréquence 15 min nécessite un plan Vercel le permettant (sinon : planificateur externe appelant la même route).

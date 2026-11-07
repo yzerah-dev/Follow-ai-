@@ -13,6 +13,11 @@ import { evaluateDiscount, type CommercialPolicy } from "@/features/offers/polic
 import { ANALYST_SYSTEM, LEA_SYSTEM } from "./prompts";
 import { emailDraftSchema, objectionReplySchema, replyAnalysisSchema, type ReplyAnalysis } from "./schemas";
 import { mockFollowup, mockObjectionReply, mockOfferEmail, type ContactCtx } from "./mock-brain";
+import { answerFromFacts, detectTopics, TOPIC_LABEL, type Facts } from "./answers";
+import { buildTemplate } from "@/features/conversations/templates";
+import { toE164, isMobileFr } from "@/lib/phone";
+import { formatMoney } from "@/lib/money";
+import { formatDate } from "@/lib/utils";
 import { checkMessage } from "./guards";
 import { loadPolicy, loadAutonomy } from "@/features/settings/policy-repo";
 import { decideAutonomy, type AutonomyDecision } from "./autonomy";
@@ -39,14 +44,44 @@ async function senderInfo(db: Db, orgId: string, userId: string | null) {
   return { senderName: me?.display_name ?? "LÉA — assistante commerciale", companyName: org?.brand?.companyName ?? org?.name ?? "" };
 }
 
-async function primaryContact(db: Db, customerId: string): Promise<{ id: string; email: string | null; ctx: ContactCtx } | null> {
-  const r = await db.query<{ id: string; email: string | null; salutation: string | null; first_name: string | null; last_name: string | null }>(
-    `select c.id, c.email, c.salutation, c.first_name, c.last_name from customer_contacts cc join contacts c on c.id = cc.contact_id
-     where cc.customer_id = $1 and cc.can_receive_offers order by (c.email is not null and c.consent_email) desc, cc.is_primary desc, c.created_at limit 1`,
+type ContactInfo = { id: string; email: string | null; mobile: string | null; channel: "email" | "whatsapp" | null; ctx: ContactCtx };
+
+/** Contact joignable du client et canal à utiliser : email si consentement, sinon WhatsApp (mobile + consentement). */
+async function primaryContact(db: Db, customerId: string): Promise<ContactInfo | null> {
+  const r = await db.query<{ id: string; email: string | null; phone: string | null; consent_email: boolean; consent_whatsapp: boolean; salutation: string | null; first_name: string | null; last_name: string | null }>(
+    `select c.id, c.email, coalesce(c.mobile, c.phone) as phone, c.consent_email, c.consent_whatsapp, c.salutation, c.first_name, c.last_name
+     from customer_contacts cc join contacts c on c.id = cc.contact_id
+     where cc.customer_id = $1 and cc.can_receive_offers
+     order by ((c.email is not null and c.consent_email) or (c.consent_whatsapp and coalesce(c.mobile, c.phone) is not null)) desc,
+              (c.email is not null and c.consent_email) desc, cc.is_primary desc, c.created_at limit 1`,
     [customerId],
   );
   const c = r.rows[0];
-  return c ? { id: c.id, email: c.email, ctx: { salutation: c.salutation, firstName: c.first_name, lastName: c.last_name } } : null;
+  if (!c) return null;
+  const mobile = toE164(c.phone);
+  const channel = c.email && c.consent_email ? "email" : c.consent_whatsapp && isMobileFr(mobile) ? "whatsapp" : null;
+  return { id: c.id, email: c.email, mobile: isMobileFr(mobile) ? mobile : null, channel, ctx: { salutation: c.salutation, firstName: c.first_name, lastName: c.last_name } };
+}
+
+/** Faits vérifiés pour répondre aux questions (offre en cours, conditions du compte, disponibilités connues). */
+async function loadFacts(db: Db, customerId: string | null, offerId: string | null): Promise<Facts> {
+  const cu = customerId
+    ? (await db.query<{ franco_amount: string | null; min_order_amount: string | null; payment_terms: string | null }>(`select franco_amount, min_order_amount, payment_terms from customers where id = $1`, [customerId])).rows[0]
+    : undefined;
+  let offer: Facts["offer"] = null;
+  if (offerId) {
+    const o = (await db.query<{ number: string; valid_until: string | null; total_ht: string; total_ttc: string }>(`select number, valid_until, total_ht, total_ttc from offers where id = $1`, [offerId])).rows[0];
+    const lines = (await db.query<{ reference: string; description: string; quantity: string; unit_price_ht: string; units_per_case: number | null; availability: string; available_from: string | null; qty_available: string | null }>(
+      `select p.reference, l.description, l.quantity, l.unit_price_ht, p.units_per_case, p.availability, p.available_from,
+              (select s.qty_available from inventory_snapshots s where s.product_id = p.id order by s.captured_at desc limit 1) as qty_available
+       from offer_lines l join products p on p.id = l.product_id where l.offer_id = $1 order by l.line_no`, [offerId])).rows;
+    if (o)
+      offer = {
+        number: o.number, validUntil: o.valid_until, totalHt: o.total_ht, totalTtc: o.total_ttc,
+        lines: lines.map((l) => ({ reference: l.reference, description: l.description, quantity: l.quantity, unitPriceHt: l.unit_price_ht, unitsPerCase: l.units_per_case, availability: l.availability, qtyAvailable: l.qty_available, availableFrom: l.available_from })),
+      };
+  }
+  return { offer, customer: { francoAmount: cu?.franco_amount ?? null, minOrderAmount: cu?.min_order_amount ?? null, paymentTerms: cu?.payment_terms ?? null } };
 }
 
 /** Rédige l'email d'accompagnement d'une offre → message en attente de validation. */
@@ -87,22 +122,35 @@ ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
   }
   const runId = await recordRun(db, orgId, "message_draft", actor, llm, { offerId, task: "draft_offer_email" }, { draft, guardNotes }, res.usage);
 
-  let conv = (await db.query<{ id: string }>(`select id from conversations where offer_id = $1 and channel = 'email' limit 1`, [offerId])).rows[0];
+  // Canal : email (offre complète + pièces jointes) ou WhatsApp (modèle approuvé + PDF) si c'est le seul canal autorisé.
+  const channel: "email" | "whatsapp" = contact?.channel ?? "email";
+  let body = draft.body;
+  let subject: string | null = draft.subject;
+  let template: ReturnType<typeof buildTemplate>["template"] | null = null;
+  if (channel === "whatsapp") {
+    const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || offer.customer_name;
+    const t = buildTemplate("offre_disponible", [name, offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", sender.companyName]);
+    body = t.text;
+    subject = null;
+    template = t.template;
+  }
+  const to = channel === "whatsapp" ? contact?.mobile ?? null : contact?.email ?? null;
+  let conv = (await db.query<{ id: string }>(`select id from conversations where offer_id = $1 and channel = $2 limit 1`, [offerId, channel])).rows[0];
   if (!conv) {
     conv = (await db.query<{ id: string }>(
       `insert into conversations (organization_id, customer_id, contact_id, channel, subject, status, assigned_user_id, offer_id, last_message_at)
-       values ($1,$2,$3,'email',$4,'open',$5,$6, now()) returning id`,
-      [orgId, offer.customer_id, contact?.id ?? null, draft.subject, actor.userId, offerId])).rows[0]!;
+       values ($1,$2,$3,$7,$4,'open',$5,$6, now()) returning id`,
+      [orgId, offer.customer_id, contact?.id ?? null, draft.subject, actor.userId, offerId, channel])).rows[0]!;
   }
   // Autonomie : uniquement pour les envois initiés par LÉA (un humain qui demande un brouillon garde la main).
   const decision: AutonomyDecision | null = opts.autonomous
-    ? decideAutonomy(await loadAutonomy(db, orgId), { kind: "offer_email", offerTotalHt: offer.total_ht, discountPct: maxLineDiscount, guardNotes, identityVerified: !!contact?.email })
+    ? decideAutonomy(await loadAutonomy(db, orgId), { kind: "offer_email", offerTotalHt: offer.total_ht, discountPct: maxLineDiscount, guardNotes, identityVerified: !!to })
     : null;
   const automatic = decision?.mode === "auto";
   const msg = await db.query<{ id: string }>(
     `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis, created_by)
-     values ($1,$2,'outbound','email',$3,$4,$5,$8, true, $6, $7) returning id`,
-    [orgId, conv.id, contact?.email ?? null, draft.subject, draft.body, { personalizationBasis: draft.personalizationBasis, arguments: draft.arguments, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision }, actor.userId, automatic ? "approved" : "pending_approval"],
+     values ($1,$2,'outbound',$9,$3,$4,$5,$8, true, $6, $7) returning id`,
+    [orgId, conv.id, to, subject, body, { personalizationBasis: draft.personalizationBasis, arguments: draft.arguments, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision, template, emailDraft: channel === "whatsapp" ? draft.body : undefined }, actor.userId, automatic ? "approved" : "pending_approval", channel],
   );
   const messageId = msg.rows[0]!.id;
   if (!automatic)
@@ -110,7 +158,7 @@ ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
       `insert into approvals (organization_id, subject_type, subject_id, summary, payload, requested_by_agent, requested_by)
        values ($1,'message',$2,$3,$4,true,$5)
        on conflict (organization_id, subject_type, subject_id) where status = 'pending' do nothing`,
-      [orgId, messageId, `Email « ${draft.subject} » à ${offer.customer_name}`, { offerId, conversationId: conv.id, reason: decision?.reason ?? null }, actor.userId],
+      [orgId, messageId, `${channel === "whatsapp" ? "WhatsApp" : "Email"} « ${subject ?? offer.number} » à ${offer.customer_name}`, { offerId, conversationId: conv.id, reason: decision?.reason ?? null }, actor.userId],
     );
   await db.query(`insert into agent_decisions (organization_id, run_id, customer_id, decision_type, rationale, payload, requires_approval) values ($1,$2,$3,$4,$5,$6,$7)`,
     [orgId, runId, offer.customer_id, automatic ? "auto_send" : "draft_message",
@@ -145,7 +193,9 @@ export async function analyzeInbound(db: Db, orgId: string, messageId: string, a
         [orgId, m.customer_id, `Demande client : ${[analysis.requestedDiscountPct !== null && `remise ${analysis.requestedDiscountPct} %`, analysis.requestedQuantity && `quantité ${analysis.requestedQuantity}`, analysis.targetPrice && `prix cible ${analysis.targetPrice}`].filter(Boolean).join(", ")}`, { messageId }]);
   }
   if (analysis.intent === "unsubscribe" && m.from_address) {
-    await db.query(`insert into suppression_entries (organization_id, channel, address, reason) values ($1,'email',$2,'unsubscribe') on conflict do nothing`, [orgId, m.from_address.trim().toLowerCase()]);
+    const ch = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [m.conversation_id])).rows[0]!.channel;
+    await db.query(`insert into suppression_entries (organization_id, channel, address, reason) values ($1,$2,$3,'unsubscribe') on conflict do nothing`,
+      [orgId, ch, ch === "email" ? m.from_address.trim().toLowerCase() : (toE164(m.from_address) ?? m.from_address)]);
     await db.query(`update messages set handled = true where id = $1`, [messageId]);
     await audit(db, orgId, { type: "agent" }, "suppression.added", { type: "message", id: messageId });
     return { analysis, replyMessageId: null, runId };
@@ -170,6 +220,16 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
   const offer = m.offer_id ? (await db.query<{ number: string; total_ht: string; valid_until: string | null }>(`select number, total_ht, valid_until from offers where id = $1`, [m.offer_id])).rows[0] ?? null : null;
   const contact = m.customer_id ? await primaryContact(db, m.customer_id) : null;
   const sender = await senderInfo(db, orgId, actor.userId);
+  // Discussion : canal de la conversation, historique, et réponses factuelles calculées à partir des données.
+  const inbound = (await db.query<{ body: string }>(`select body from messages where id = $1`, [inboundId])).rows[0]!;
+  const channel = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [m.conversation_id])).rows[0]!.channel;
+  const history = (await db.query<{ direction: string; body: string }>(
+    `select direction, body from messages where conversation_id = $1 and id <> $2 and status not in ('draft','pending_approval') order by created_at desc limit 12`, [m.conversation_id, inboundId])).rows.reverse();
+  const turn = history.filter((h) => h.direction === "outbound").length;
+  const facts = await loadFacts(db, m.customer_id, m.offer_id);
+  const topics = detectTopics(inbound.body);
+  const { answers, unknown } = answerFromFacts(topics, facts, inbound.body);
+  const unknownLabels = unknown.map((t) => TOPIC_LABEL[t]);
 
   // Décision de remise : 100 % déterministe
   let escalate = false;
@@ -193,11 +253,20 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
     allowedDiscountPct: allowed,
     escalate,
     ...sender,
+    channel,
+    answers,
+    unknownLabels,
+    turn,
   };
   const input = `Rédige la réponse au client. Décision du système sur la remise (à respecter strictement) : ${decisionText}
 Remise maximale utilisable dans ce message : ${allowed ?? 0} %. ${escalate ? "Le dossier est transféré au commercial : annonce-le sans rien promettre." : ""}
+Canal : ${channel === "whatsapp" ? "WhatsApp — messages courts, ton de messagerie, pas d'objet" : "email"}.
+Réponses factuelles autorisées (n'en invente aucune autre) : ${answers.length ? answers.join(" | ") : "aucune"}.
+${unknownLabels.length ? `Sujets SANS donnée fiable (annonce que le commercial confirme, ne réponds pas toi-même) : ${unknownLabels.join(", ")}.` : ""}
 Données du système :
-${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerName, contact: context.contact, offer: context.offer, analysis }, null, 2))}`;
+${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerName, contact: context.contact, offer: context.offer, analysis }, null, 2))}
+Historique de la conversation (du plus ancien au plus récent) :
+${wrapUntrusted("conversation_history", history.map((h) => `${h.direction === "inbound" ? "CLIENT" : "NOUS"} : ${h.body}`).join("\n---\n"), 6000)}`;
   const res = await llm.structured({ task: "draft_objection_reply", system: LEA_SYSTEM, input, schema: objectionReplySchema, context });
   let reply = res.data;
   const guard = checkMessage(reply.body, { allowedDiscountPct: allowed, personalizedAllowed: true });
@@ -213,6 +282,8 @@ ${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerNa
     objection: analysis.objection,
     escalate,
     discountPct: reply.proposedDiscountPct,
+    answered: answers.length,
+    unanswered: unknown.length,
     guardNotes,
     identityVerified: m.identity_confidence === "verified" && !!m.customer_id,
     injectionSuspected: !!opts.injectionSuspected,
@@ -220,8 +291,8 @@ ${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerNa
   const automatic = decision.mode === "auto";
   const msg = await db.query<{ id: string }>(
     `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis, reply_to_message_id, created_by)
-     values ($1,$2,'outbound','email',$3,$4,$5,$9,true,$6,$7,$8) returning id`,
-    [orgId, m.conversation_id, m.from_address, reply.subject, reply.body, { rationale: reply.rationale, discountPct: reply.proposedDiscountPct, decisionText, escalate, guardNotes, simulatedAi: res.simulated, runId, autonomy: decision }, inboundId, actor.userId, automatic ? "approved" : "pending_approval"],
+     values ($1,$2,'outbound',$10,$3,$4,$5,$9,true,$6,$7,$8) returning id`,
+    [orgId, m.conversation_id, m.from_address, channel === "whatsapp" ? null : reply.subject, reply.body, { rationale: reply.rationale, discountPct: reply.proposedDiscountPct, decisionText, escalate, guardNotes, simulatedAi: res.simulated, runId, autonomy: decision, answers, unknown: unknownLabels }, inboundId, actor.userId, automatic ? "approved" : "pending_approval", channel],
   );
   if (!automatic)
     await db.query(
@@ -238,6 +309,15 @@ ${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerNa
        select $1, $2, $3, $4, 'escalation', $5, now() + interval '1 day', cu.owner_user_id, $6, $7, true from customers cu where cu.id = $2
        on conflict (organization_id, idempotency_key) do nothing`,
       [orgId, m.customer_id, m.conversation_id, m.offer_id, `Négociation à reprendre — ${m.customer_name}`, `escalation:${inboundId}`, decisionText],
+    );
+  }
+  if (unknown.length && m.customer_id) {
+    // Points sans donnée fiable : le commercial complète, LÉA a prévenu le client.
+    await db.query(
+      `insert into followup_tasks (organization_id, customer_id, conversation_id, offer_id, kind, title, due_at, assigned_user_id, idempotency_key, notes, created_by_agent)
+       select $1, $2, $3, $4, 'reply', $5, now() + interval '4 hours', cu.owner_user_id, $6, $7, true from customers cu where cu.id = $2
+       on conflict (organization_id, idempotency_key) do nothing`,
+      [orgId, m.customer_id, m.conversation_id, m.offer_id, `Répondre au client — ${unknownLabels.join(", ")} (${m.customer_name})`, `reply:${inboundId}`, inbound.body.slice(0, 500)],
     );
   }
   if (analysis.intent === "meeting_request" && m.customer_id) {
@@ -296,14 +376,23 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
     guardNotes.push(...guard.reasons);
     draft = mockFollowup(context);
   }
+  // WhatsApp : la relance arrive hors fenêtre de 24 h → modèle approuvé « relance_offre ».
+  const fchannel = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [t.conversation_id])).rows[0]!.channel;
+  let ftemplate: ReturnType<typeof buildTemplate>["template"] | null = null;
+  if (fchannel === "whatsapp") {
+    const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || "";
+    const tpl = buildTemplate("relance_offre", [name || "et merci", offer?.number ?? "", sender.companyName]);
+    draft = { ...draft, subject: draft.subject, body: tpl.text };
+    ftemplate = tpl.template;
+  }
   const decision = decideAutonomy(cfg, { kind: "followup", attempt: t.attempt, maxFollowups: cfg.maxFollowups, guardNotes });
   const automatic = decision.mode === "auto";
   const runId = await recordRun(db, orgId, "followup", { userId: null }, llm, { taskId }, { draft, decision }, res.usage);
   const msg = await db.query<{ id: string }>(
     `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis)
-     values ($1,$2,'outbound','email',$3,$4,$5,$6,true,$7) returning id`,
-    [orgId, t.conversation_id, contact?.email ?? null, draft.subject, draft.body, automatic ? "approved" : "pending_approval",
-      { kind: "followup", attempt: t.attempt, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision }],
+     values ($1,$2,'outbound',$8,$3,$4,$5,$6,true,$7) returning id`,
+    [orgId, t.conversation_id, fchannel === "whatsapp" ? contact?.mobile ?? null : contact?.email ?? null, fchannel === "whatsapp" ? null : draft.subject, draft.body, automatic ? "approved" : "pending_approval",
+      { kind: "followup", attempt: t.attempt, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision, template: ftemplate }, fchannel],
   );
   await db.query(`update followup_tasks set status = 'done' where id = $1`, [taskId]);
   if (!automatic)

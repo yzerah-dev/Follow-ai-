@@ -11,7 +11,7 @@
 import type { Db } from "@/lib/database/client";
 import { toIsoDate } from "@/lib/utils";
 import { runOpportunityScan } from "@/features/opportunities/service";
-import { createOfferFromOpportunity } from "@/features/offers/service";
+import { createOfferFromOpportunity, OfferNotBuildable } from "@/features/offers/service";
 import { generateOfferAssets, autoApproveAssets } from "@/features/creative-studio/service";
 import { dispatchMessage } from "@/features/conversations/dispatch";
 import { loadAutonomy } from "@/features/settings/policy-repo";
@@ -73,11 +73,14 @@ export async function runAutopilot(db: Db, orgId: string, now = new Date()): Pro
     if (report.offersCreated >= budget) break;
     if (seenCustomers.has(c.customer_id)) continue;
     seenCustomers.add(c.customer_id);
-    // Destinataire joignable : email, consentement, pas d'opposition.
+    // Destinataire joignable : email ou WhatsApp, avec consentement et sans opposition.
     const reachable = (await db.query(
       `select 1 from customer_contacts cc join contacts ct on ct.id = cc.contact_id
-       where cc.customer_id = $1 and cc.can_receive_offers and ct.email is not null and ct.consent_email
-         and not exists (select 1 from suppression_entries s where s.organization_id = $2 and s.channel = 'email' and s.address = lower(ct.email))
+       where cc.customer_id = $1 and cc.can_receive_offers
+         and ((ct.email is not null and ct.consent_email
+               and not exists (select 1 from suppression_entries s where s.organization_id = $2 and s.channel = 'email' and s.address = lower(ct.email)))
+           or (ct.consent_whatsapp and coalesce(ct.mobile, ct.phone) is not null
+               and not exists (select 1 from suppression_entries s where s.organization_id = $2 and s.channel = 'whatsapp' and s.address = ct.mobile)))
        limit 1`, [c.customer_id, orgId])).rowCount;
     if (!reachable) {
       report.skippedCustomers++;
@@ -85,7 +88,14 @@ export async function runAutopilot(db: Db, orgId: string, now = new Date()): Pro
     }
     // Résultat compté seulement si toute l'étape a réussi (sinon savepoint annulé).
     const outcome = await step(db, "offer", async () => {
-      const offer = await createOfferFromOpportunity(db, orgId, null, c.id, today, { reason: "Offre préparée et validée automatiquement par LÉA (politique respectée).", maxTotalHt: cfg.maxOfferHt });
+      let offer;
+      try {
+        offer = await createOfferFromOpportunity(db, orgId, null, c.id, today, { reason: "Offre préparée et validée automatiquement par LÉA (politique respectée).", maxTotalHt: cfg.maxOfferHt });
+      } catch (e) {
+        if (!(e instanceof OfferNotBuildable)) throw e;
+        await db.query(`insert into agent_decisions (organization_id, customer_id, decision_type, rationale, payload) values ($1,$2,'offer_not_buildable',$3,$4)`, [orgId, c.customer_id, e.message, { opportunityId: c.id }]);
+        return "not_buildable" as const;
+      }
       if (!offer.autoApproved) return "pending_approval" as const;
       await generateOfferAssets(db, orgId, null, offer.offerId, ["offer_pdf", "offer_excel"]);
       await autoApproveAssets(db, orgId, offer.offerId);
@@ -93,6 +103,10 @@ export async function runAutopilot(db: Db, orgId: string, now = new Date()): Pro
       return email.dispatch?.status ?? ("email_pending" as const);
     }, report.errors);
     if (!outcome) continue;
+    if (outcome === "not_buildable") {
+      report.skippedCustomers++;
+      continue;
+    }
     report.offersCreated++;
     if (outcome === "pending_approval") report.offersPendingApproval++;
     else if (outcome === "sent") report.emailsSent++;

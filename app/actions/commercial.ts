@@ -13,7 +13,7 @@ import { toIsoDate } from "@/lib/utils";
 import { createOfferFromOpportunity, createOfferDraft, suggestItemsForCustomer, decideOffer, acceptOfferAndPrepareOrder, markOfferLost } from "@/features/offers/service";
 import { generateOfferAssets, decideAsset, ASSET_KINDS } from "@/features/creative-studio/service";
 import { draftOfferEmail } from "@/features/agent/lea";
-import { decideMessage, simulateCustomerReply } from "@/features/conversations/service";
+import { decideMessage, sendManualMessage, simulateCustomerReply } from "@/features/conversations/service";
 import { runOpportunityScan } from "@/features/opportunities/service";
 import { runAutopilot } from "@/features/agent/autopilot";
 
@@ -265,4 +265,17 @@ export async function runAutopilotAction() {
     console.error(e);
     return { ok: false, error: "LÉA n'a pas pu terminer son travail." } as ActionResult;
   }
+}
+
+export async function sendManualReplyAction(conversationId: string, body: string, subject?: string) {
+  const r = await run(canWrite, async (db, ctx) => {
+    const res = await sendManualMessage(db, ctx.org.organizationId, ctx.userId, uuid.parse(conversationId), {
+      body: z.string().min(1).max(8000).parse(body),
+      subject: subject ? z.string().max(160).parse(subject) : null,
+    });
+    return res.status === "sent" ? (res.simulated ? "Message envoyé (simulation)." : "Message envoyé.") : "Message programmé.";
+  }, { key: "manual", limit: 30 });
+  revalidatePath(`/conversations/${conversationId}`);
+  revalidatePath("/conversations");
+  return r;
 }
