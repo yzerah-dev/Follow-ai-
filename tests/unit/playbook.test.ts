@@ -94,8 +94,12 @@ describe("Playbook des objections", () => {
     expect(h.strategy).toBe("hold");
     expect(h.followUpDate).toBe("2026-12-21"); // couverture de 100 jours : reprise de contact plafonnée à 45 jours
   });
-  it("« pas besoin » : seule la rupture imminente est proposée ; sans risque, décision respectée", () => {
-    expect(runPlaybook({ ...base, objection: "no_need" }).items.map((i) => i.productId)).toEqual(["a"]);
+  it("« pas besoin » : aucune offre envoyée d'office ; un point d'attention chiffré + rendez-vous court ; sans risque, décision respectée", () => {
+    const r = runPlaybook({ ...base, objection: "no_need" });
+    expect(r.strategy).toBe("hold"); // pas de pression : pas de nouvelle offre
+    expect(r.counterArguments).toHaveLength(1);
+    expect(r.counterArguments[0]).toMatch(/Poêle 28/); // la référence en rupture imminente
+    expect(r.question).toMatch(/15 minutes/);
     const calm = new Map([["b", coverage.get("b")!]]);
     expect(runPlaybook({ ...base, lines: [lines[1]!], coverage: calm, objection: "no_need" }).strategy).toBe("respect");
   });

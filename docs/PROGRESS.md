@@ -1,6 +1,19 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-08 — grands catalogues V3 (mesures : docs/PERFORMANCE.md)._
+_Mise à jour : 2026-11-08 — LÉA Sales Academy v1.0 (training/)._
+
+## LÉA Sales Academy v1.0 (2026-11-08)
+- Formation intégrale : `training/LEA_COMMERCIAL_ACADEMY.md` (source de référence, correspondance modules → code).
+- Prompt système versionné (`LEA_PROMPT_VERSION = academy-1.0`, tracé dans chaque exécution IA) : `lib/ai/lea-personality.ts`,
+  `lib/ai/lea-sales-playbook.ts`, `lib/ai/lea-objection-handler.ts` (P.R.O.V.E., réponses de référence) ; règles de sécurité inchangées.
+- Nouvelles objections et intentions : « je vais réfléchir », « fournisseur en place », réclamation de livraison (tâche logistique, aucun délai annoncé).
+- Évaluateur `lib/ai/lea-conversation-evaluator.ts` (grille 15/15/20/20/15/15, 6 erreurs critiques) ; simulateur `features/training/simulator.ts`
+  (même chemin que la production) ; 105 scénarios (`training/scenarios/`), rapports (`training/evaluations/`), régression `tests/unit/academy.test.ts`.
+- Résultats (simulateur déterministe) : 91,1 → 98,6/100, 105/105 scénarios, 0 erreur critique ; examen final 10/10 (moyenne 99/100).
+  **Modèle IA réel non évalué** (aucune clé) — LÉA n'est pas certifiée avec le modèle réel.
+- Garde-fous de production ajoutés : délai de livraison non confirmé, montant absent des données vérifiées. Bogue corrigé : clé de
+  dédoublonnage trop longue pour les réassorts de plus de 200 références.
+
 
 ## Grands catalogues V3 (2026-11-08)
 - Moteur de sélection (`features/selection/pipeline.ts`) : index produits, historique, fréquences, réassorts, permanents, retours en stock,
@@ -120,7 +133,7 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 103/103 |
+| `npm run test` | ✅ 117/117 (dont 105 scénarios Academy) |
 | `npm run test:integration` (PostgreSQL 16) | ✅ 66/66 (dont négociation, grands catalogues, 20 RLS) |
 | `npm run perf` (20 000 produits, 500 000 lignes) | ✅ 27/27 budgets respectés — voir docs/PERFORMANCE.md |
 | `npm run build` | ✅ |

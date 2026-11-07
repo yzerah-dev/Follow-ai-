@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const OBJECTIONS = ["too_expensive", "no_need", "stock_available", "competition", "budget", "delivery", "lead_time", "no_time", "refusal", "no_response", "not_selling"] as const;
+export const OBJECTIONS = ["too_expensive", "no_need", "stock_available", "competition", "budget", "delivery", "lead_time", "no_time", "refusal", "no_response", "not_selling", "think_later", "existing_supplier"] as const;
 export type Objection = (typeof OBJECTIONS)[number];
 
 export const OBJECTION_LABEL: Record<Objection, string> = {
@@ -15,9 +15,11 @@ export const OBJECTION_LABEL: Record<Objection, string> = {
   refusal: "Refus",
   no_response: "Non-réponse",
   not_selling: "Ne se vend pas",
+  think_later: "Va réfléchir",
+  existing_supplier: "Fournisseur en place",
 };
 
-export const INTENTS = ["accept", "objection", "question", "meeting_request", "unsubscribe", "out_of_office", "other"] as const;
+export const INTENTS = ["accept", "objection", "question", "meeting_request", "unsubscribe", "out_of_office", "complaint", "other"] as const;
 export type Intent = (typeof INTENTS)[number];
 export const INTENT_LABEL: Record<Intent, string> = {
   accept: "Accord / commande",
@@ -26,6 +28,7 @@ export const INTENT_LABEL: Record<Intent, string> = {
   meeting_request: "Demande de rendez-vous",
   unsubscribe: "Désinscription",
   out_of_office: "Absence",
+  complaint: "Réclamation",
   other: "Autre",
 };
 

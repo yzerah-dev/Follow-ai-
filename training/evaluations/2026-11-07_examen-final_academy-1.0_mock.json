@@ -1,0 +1,285 @@
+{
+  "date": "2026-11-07T17:16:11.266Z",
+  "promptVersion": "academy-1.0",
+  "provider": "mock",
+  "model": "simulation-deterministe",
+  "simulated": true,
+  "average": 99,
+  "allPassed": true,
+  "exams": [
+    {
+      "n": 1,
+      "title": "Convaincre un client surstocké avec des données",
+      "kind": "conversation",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Échange 1 : « J'ai trop de stock, il m'en reste 40 de Plaid Duo. »",
+          "ok": true,
+          "detail": "100/100"
+        },
+        {
+          "name": "Échange 2 : « Quel est le nouveau montant total ? »",
+          "ok": true,
+          "detail": "100/100"
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 2,
+      "title": "Défendre un prix sans remise injustifiée",
+      "kind": "conversation",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Échange 1 : « C'est trop cher pour moi. »",
+          "ok": true,
+          "detail": "100/100"
+        },
+        {
+          "name": "Échange 2 : « Un concurrent me fait moins cher sur les mêmes produits. »",
+          "ok": true,
+          "detail": "100/100"
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 3,
+      "title": "Réactiver un client dormant",
+      "kind": "conversation",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Échange 1 : « Bonjour, ça fait longtemps. Quel est le prix de R421 aujourd'hui ? »",
+          "ok": true,
+          "detail": "100/100"
+        },
+        {
+          "name": "Échange 2 : « Je vais réfléchir. »",
+          "ok": true,
+          "detail": "100/100"
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 4,
+      "title": "Préparer un réassort de 200 références",
+      "kind": "outil",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Au moins 200 références de réassort",
+          "ok": true,
+          "detail": "232 références"
+        },
+        {
+          "name": "Offre créée avec toutes les lignes (aucune perdue)",
+          "ok": true,
+          "detail": "232 lignes"
+        },
+        {
+          "name": "Aucun doublon de produit",
+          "ok": true
+        },
+        {
+          "name": "Chaque ligne a un prix vérifié et une justification",
+          "ok": true
+        },
+        {
+          "name": "Quantités au colisage",
+          "ok": true
+        },
+        {
+          "name": "Références lentes écartées avec motif",
+          "ok": true,
+          "detail": "289 écartées"
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 5,
+      "title": "Présenter 30 nouveautés pertinentes",
+      "kind": "outil",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Au moins 30 nouveautés proposées",
+          "ok": true,
+          "detail": "40 nouveautés"
+        },
+        {
+          "name": "Toutes dans des catégories travaillées par le client",
+          "ok": true
+        },
+        {
+          "name": "Disponibles (aucune rupture sans date)",
+          "ok": true
+        },
+        {
+          "name": "Quantité de découverte (colisage minimal)",
+          "ok": true
+        },
+        {
+          "name": "Justification par nouveauté",
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 6,
+      "title": "Obtenir un rendez-vous avec un acheteur difficile",
+      "kind": "conversation",
+      "score": 91,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Échange 1 : « Je n'ai besoin de rien, et vos relances m'agacent. »",
+          "ok": true,
+          "detail": "92/100"
+        },
+        {
+          "name": "Échange 2 : « Bon, d'accord pour un rendez-vous rapide. »",
+          "ok": true,
+          "detail": "90/100"
+        }
+      ],
+      "errors": [],
+      "improvements": [
+        "La réponse ne traite pas le cœur de l'objection.",
+        "Argumentation peu étayée par les données."
+      ]
+    },
+    {
+      "n": 7,
+      "title": "Gérer une réclamation de livraison",
+      "kind": "conversation",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Échange 1 : « Ma livraison est en retard, c'est inadmissible ! »",
+          "ok": true,
+          "detail": "100/100"
+        },
+        {
+          "name": "Échange 2 : « Quand est-ce que je serai livré exactement ? »",
+          "ok": true,
+          "detail": "100/100"
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 8,
+      "title": "Construire un plan d'accélération du CA",
+      "kind": "outil",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Objectif suivi (réalisé, attendu à date, écart)",
+          "ok": true,
+          "detail": "réalisé 2034879 € / attendu 2645090 €"
+        },
+        {
+          "name": "Retard détecté",
+          "ok": true,
+          "detail": "behind"
+        },
+        {
+          "name": "Opportunité « objectif de CA » avec plan d'accélération",
+          "ok": true
+        },
+        {
+          "name": "Plan avec au moins 3 leviers (réassorts, nouveautés, compléments, rendez-vous…)",
+          "ok": true,
+          "detail": "3 leviers"
+        },
+        {
+          "name": "Leviers chiffrés seulement si un prix est connu",
+          "ok": true
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 9,
+      "title": "Préparer une offre commerciale illustrée",
+      "kind": "outil",
+      "score": 100,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Génération asynchrone terminée sans erreur",
+          "ok": true,
+          "detail": "6/6 étapes"
+        },
+        {
+          "name": "Excel illustré : une ligne par référence",
+          "ok": true,
+          "detail": "232 lignes"
+        },
+        {
+          "name": "Excel illustré : photos issues des médias autorisés",
+          "ok": true,
+          "detail": "232 photos placées"
+        },
+        {
+          "name": "Contrôles automatiques de l'offre réussis",
+          "ok": true
+        },
+        {
+          "name": "Catalogue PDF, synthèse, sélection prioritaire, analyse de couverture générés",
+          "ok": true
+        },
+        {
+          "name": "Email court malgré l'offre volumineuse",
+          "ok": true,
+          "detail": "1288 caractères"
+        }
+      ],
+      "errors": [],
+      "improvements": []
+    },
+    {
+      "n": 10,
+      "title": "Conclure une vente sans dépasser ses autorisations",
+      "kind": "conversation",
+      "score": 96,
+      "passed": true,
+      "checks": [
+        {
+          "name": "Échange 1 : « Je veux 5 % de remise, sinon je ne commande pas. »",
+          "ok": true,
+          "detail": "100/100"
+        },
+        {
+          "name": "Échange 2 : « Bon, et 1 % de remise alors ? »",
+          "ok": true,
+          "detail": "92/100"
+        }
+      ],
+      "errors": [],
+      "improvements": [
+        "La réponse ne traite pas le cœur de l'objection."
+      ]
+    }
+  ]
+}

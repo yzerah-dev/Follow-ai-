@@ -6,6 +6,8 @@
 import { OBJECTION_LABEL, type EmailDraft, type ObjectionReply, type ReplyAnalysis, type Objection, type ChatAnswer } from "./schemas";
 import { sanitizeText } from "@/lib/security/untrusted";
 import { parseVoice, signoff, emoji, type Voice } from "./voice";
+import { referenceAnswer, proveOpening, RESEARCH_QUESTIONS } from "@/lib/ai/lea-objection-handler";
+import { CLOSINGS } from "@/lib/ai/lea-sales-playbook";
 
 export type ContactCtx = { salutation: string | null; firstName: string | null; lastName: string | null } | null;
 
@@ -129,13 +131,15 @@ const RULES: { objection: Objection; patterns: RegExp[] }[] = [
   { objection: "competition", patterns: [/concurren/i, /autre fournisseur/i, /ailleurs/i, /moins cher chez/i] },
   { objection: "delivery", patterns: [/frais de (port|livraison)/i, /\bfranco\b/i] }, // avant « trop élevé » : « frais de port trop élevés »
   { objection: "too_expensive", patterns: [/trop cher/i, /prix (trop )?élevé/i, /trop élevé/i, /\bremise\b/i, /réduction/i, /geste commercial/i, /baisser (le|vos) prix/i] },
+  { objection: "think_later", patterns: [/je vais r[ée]fl[ée]chir/i, /laissez-moi r[ée]fl[ée]chir/i, /on en reparle/i, /je dois y r[ée]fl[ée]chir/i, /je vous redis/i] },
+  { objection: "existing_supplier", patterns: [/d[ée]j[àa] (un|avec un|mon) fournisseur/i, /travaille d[ée]j[àa] avec/i, /nous avons d[ée]j[àa] nos fournisseurs/i] },
   { objection: "not_selling", patterns: [/ne se vend pas/i, /se vend mal/i, /ne tourne pas/i, /tourne mal/i, /invendu/i, /ne part pas/i] },
   { objection: "stock_available", patterns: [/trop de stock/i, /beaucoup de stock/i, /il (m['’]|nous )en reste/i, /encore du stock/i, /il nous en reste/i, /stock suffisant/i, /déjà (du|en) stock/i, /pas encore écoulé/i] },
   { objection: "budget", patterns: [/budget/i, /trésorerie/i] },
   { objection: "delivery", patterns: [/frais de port/i, /livraison/i, /transport/i, /franco/i] },
   { objection: "lead_time", patterns: [/délai/i, /quand (pourriez|pouvez)/i, /date de livraison/i, /au plus vite/i] },
   { objection: "no_time", patterns: [/pas le temps/i, /débordé/i, /plus tard/i, /rappelez/i] },
-  { objection: "no_need", patterns: [/pas besoin/i, /pas nécessaire/i, /pas intéressé/i] },
+  { objection: "no_need", patterns: [/besoin de rien/i, /pas besoin/i, /pas nécessaire/i, /pas intéressé/i] },
   { objection: "refusal", patterns: [/non merci/i, /ne souhaitons pas/i, /ne sommes pas intéressés/i] },
 ];
 
@@ -144,10 +148,13 @@ export function mockAnalyzeReply(text: string): ReplyAnalysis {
   const discount = t.match(/(\d{1,2}(?:[.,]\d{1,2})?)\s?%/);
   const qty = t.match(/(\d{1,6})\s?(unités|pièces|colis|cartons|pcs)/i) ?? (() => { const m = t.match(/(?:il (?:m['’]|nous )en reste|il (?:me|nous) reste|j['’]en ai encore|nous en avons encore|reste encore)\s+(?:encore\s+)?(\d{1,6})/i); return m ? ([m[0], m[1], "unités"] as unknown as RegExpMatchArray) : null; })();
   const price = t.match(/(\d{1,6}(?:[.,]\d{1,2})?)\s?(€|euros?)\s?(HT)?/i);
-  if (/désinscri|ne plus recevoir|retirez[- ]moi|\bstop\b/i.test(t))
+  if (/désinscri|ne plus recevoir|retirez[- ]moi|\bstop\b|ne (veux|souhaite) plus (être|etre) (contact|sollicit)|plus de sollicitation/i.test(t))
     return { intent: "unsubscribe", objection: null, requestedDiscountPct: null, requestedQuantity: null, targetPrice: null, sentiment: "negative", summary: "Le client demande à ne plus être sollicité.", nextAction: "Inscrire l'adresse en liste d'opposition et cesser les envois." };
   if (/absent|out of office|congés jusqu/i.test(t) && t.length < 400)
     return { intent: "out_of_office", objection: null, requestedDiscountPct: null, requestedQuantity: null, targetPrice: null, sentiment: "neutral", summary: "Réponse automatique d'absence.", nextAction: "Reprogrammer la relance après la date de retour." };
+  // Réclamation (livraison en retard, commande non reçue) : service client avant toute vente.
+  if (/(livraison|commande|colis)[^.?!]{0,40}(retard|pas (encore )?(re[çc]u|arriv)|toujours pas)|en retard[^.?!]{0,30}(livraison|commande)|pas re[çc]u (ma|notre|la) commande/i.test(t))
+    return { intent: "complaint", objection: null, requestedDiscountPct: null, requestedQuantity: null, targetPrice: null, sentiment: "negative", summary: "Réclamation : livraison ou commande en retard.", nextAction: "Vérifier le statut réel de la commande et transmettre à la logistique ; aucun délai non confirmé." };
   let objection = RULES.find((r) => r.patterns.some((p) => p.test(t)))?.objection ?? null;
   // « Quel est mon franco ? », « Quel délai ? » : ce sont des questions, pas des objections.
   if ((objection === "delivery" || objection === "lead_time") && /\?/.test(t)) objection = null;
@@ -168,18 +175,21 @@ export function mockAnalyzeReply(text: string): ReplyAnalysis {
   return { intent: "other", objection: null, ...base, sentiment: "neutral", summary: "Réponse sans intention claire.", nextAction: "Transférer au commercial pour lecture." };
 }
 
+/** Arguments par objection : réponses de référence de la LÉA Sales Academy (sans annoncer de document non préparé). */
 const OBJECTION_ARGUMENTS: Record<Objection, string> = {
-  too_expensive: "Je comprends votre attention portée au prix. Les tarifs de cette proposition sont ceux de vos conditions en vigueur et les quantités sont calées sur votre rythme de vente habituel, ce qui limite le stock immobilisé.",
-  no_need: "Je comprends. Si votre besoin évolue, je reste à votre disposition ; je peux aussi vous présenter nos nouveautés lors d'un court échange.",
-  stock_available: "C'est noté. Je peux décaler la livraison ou ajuster les quantités pour qu'elles correspondent à l'écoulement de votre stock actuel.",
-  competition: "Merci pour votre transparence. Au-delà du prix, nous vous garantissons la continuité de vos références habituelles et un interlocuteur dédié ; si vous m'indiquez les références et le prix constaté, je fais le point avec mon responsable.",
-  budget: "Je comprends la contrainte budgétaire. Nous pouvons fractionner la proposition et commencer par les références qui tournent le plus vite chez vous.",
+  too_expensive: referenceAnswer("too_expensive", { prepared: false }),
+  no_need: "Entendu. Si votre besoin évolue, je peux vous présenter nos nouveautés lors d'un court échange.",
+  stock_available: referenceAnswer("stock_available", { prepared: false }),
+  competition: referenceAnswer("competition", { prepared: false }),
+  budget: referenceAnswer("budget", { prepared: false }),
   delivery: "Concernant la livraison, je vérifie les conditions applicables à votre compte et reviens vers vous avec une réponse précise.",
   lead_time: "Concernant les délais, je confirme la disponibilité de chaque référence auprès de notre logistique avant de vous donner une date ferme.",
-  no_time: "Je comprends que votre emploi du temps est chargé. Je vous propose de valider la commande directement par retour d'email, ou un échange de 10 minutes au moment qui vous convient.",
+  no_time: "Je comprends que votre emploi du temps est chargé. Un simple « OK » par retour suffit pour valider, et l'offre complète reste consultable quand cela vous convient.",
   refusal: "Je prends bonne note de votre retour et vous remercie de votre réponse. Je reste à votre disposition pour vos prochains besoins.",
-  no_response: "Je me permets de revenir vers vous concernant notre proposition.",
-  not_selling: "Merci pour ce retour, c'est précieux. Je ne veux pas vous laisser des références qui ne tournent pas : j'ai regardé vos données de vente.",
+  no_response: "Je reviens vers vous avec un point nouveau sur notre proposition.",
+  not_selling: referenceAnswer("not_selling", { prepared: false }),
+  think_later: referenceAnswer("think_later", { prepared: false }),
+  existing_supplier: referenceAnswer("existing_supplier", { prepared: false }),
 };
 
 export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
@@ -195,11 +205,22 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
     : null;
   const join = (parts: (string | null)[]) => parts.filter((x): x is string => x !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 
+  if (ctx.analysis.intent === "complaint") {
+    return {
+      subject,
+      body: join([hello, wa ? null : "", referenceAnswer("delivery_late", { prepared: false }), ...(unknownLine ? [wa ? null : "", unknownLine] : []), ...sign]),
+      proposedDiscountPct: null,
+      rationale: "Réclamation : statut à vérifier par la logistique, aucun délai annoncé, aucune nouvelle vente avant résolution.",
+    };
+  }
+  if (ctx.analysis.intent === "unsubscribe") {
+    return { subject, body: join([hello, wa ? null : "", referenceAnswer("unsubscribe", { prepared: false }), ...sign]), proposedDiscountPct: null, rationale: "Opposition enregistrée : aucune sollicitation." };
+  }
   if (ctx.analysis.intent === "accept") {
     return {
       subject,
       body: join([hello, wa ? null : "", wa ? `Merci pour votre confirmation !${emoji(v, "whatsapp", "✅")}` : "Je vous remercie pour votre confirmation.", wa ? null : "",
-        `Votre commande${ctx.offer ? ` (proposition ${ctx.offer.number})` : ""} est bien prise en compte et transmise à nos équipes. Vous recevrez la confirmation de commande dès son enregistrement.`, ...sign]),
+        `Votre commande${ctx.offer ? ` (proposition ${ctx.offer.number})` : ""} est bien prise en compte et transmise à nos équipes. Vous recevrez la confirmation de commande dès son enregistrement ; je vous tiens informé${ctx.contact?.salutation === "Mme" ? "e" : ""} de la suite.`, ...sign]),
       proposedDiscountPct: null,
       rationale: "Accord du client : confirmation et préparation de la demande de commande.",
     };
@@ -207,7 +228,7 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
   if (ctx.analysis.intent === "meeting_request") {
     return {
       subject,
-      body: join([hello, wa ? null : "", "Avec plaisir.", "Votre commercial vous contacte très prochainement pour convenir d'un créneau, en visioconférence ou au showroom selon votre préférence.", ...sign]),
+      body: join([hello, wa ? null : "", "Avec plaisir. Je vous propose un point de 15 minutes, en visioconférence ou au showroom selon votre préférence.", "Quel créneau vous conviendrait cette semaine ou la suivante ? Votre commercial confirmera le rendez-vous.", ...sign]),
       proposedDiscountPct: null,
       rationale: "Demande de rendez-vous : prise de contact par le commercial (aucun créneau inventé).",
     };
@@ -216,7 +237,8 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
     return {
       subject,
       body: join([hello, wa ? null : "", wa ? null : "Merci pour votre question.", ...facts, unknownLine ? (wa ? unknownLine : `\n${unknownLine}`) : null,
-        wa ? "Je vous prépare la commande sur cette base ?" : "\nSouhaitez-vous que je prépare la commande sur cette base ?", ...sign]),
+        // Une question sans réponse fiable n'appelle pas de vente : engagement de revenir avec l'information confirmée.
+        ctx.answers.length ? (wa ? "Je vous prépare la commande sur cette base ?" : "\nSouhaitez-vous que je prépare la commande sur cette base ?") : unknownLine ? null : (wa ? "Je reviens vers vous dès que j'ai l'information confirmée." : "\nJe reviens vers vous dès que j'ai l'information confirmée."), ...sign]),
       proposedDiscountPct: null,
       rationale: `Réponse factuelle à partir des données (${ctx.answers.length} élément(s))${ctx.unknownLabels.length ? `, ${ctx.unknownLabels.join(", ")} transmis au commercial` : ""}.`,
     };
@@ -231,43 +253,56 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
       proposedDiscountPct: null,
       rationale: "Décision du client respectée : aucune nouvelle proposition.",
     };
-  // Objection prix / budget / concurrence : on défend la valeur avec les faits calculés par le système, puis on propose d'ajuster.
-  const priceLike = o === "too_expensive" || o === "budget" || o === "competition";
+  const validity = ctx.offer ? fmtDate(ctx.offer.validUntil) : null;
+  // Rappel factuel de l'offre en cours (données du système uniquement)
+  const offerLine = ctx.offer ? `Pour rappel, votre proposition ${ctx.offer.number} s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? `, valable jusqu'au ${validity}` : ""}.` : null;
+  const reply = (parts: (string | null)[], rationale: string, proposedDiscountPct: number | null = null): ObjectionReply => ({ subject, body: join([...parts, ...sign]), proposedDiscountPct, rationale });
+
+  // Remise demandée ET accordée dans la limite de la politique : réponse claire, sans argumentaire contradictoire.
+  if (ctx.analysis.requestedDiscountPct !== null && !ctx.escalate && ctx.allowedDiscountPct && ctx.allowedDiscountPct > 0) {
+    const pct = ctx.allowedDiscountPct.toLocaleString("fr-FR");
+    return reply([hello, wa ? null : "", `C'est entendu : je peux vous accorder ${pct} % sur ${ctx.offer ? `la proposition ${ctx.offer.number} (${fmt(ctx.offer.totalHt)} HT avant remise${validity ? `, valable jusqu'au ${validity}` : ""})` : "cette offre"}.`,
+      wa ? null : "", wa ? "Un « OK » et je lance la commande ?" : "Je vous propose de valider la commande sur cette base : un « OK » suffit."], `Remise de ${pct} % accordée dans la limite de la politique.`, ctx.allowedDiscountPct);
+  }
+  // Remise demandée au-delà du plafond : la valeur est défendue, la demande est transmise (jamais promise).
+  const discountEscalation = ctx.escalate && ctx.analysis.requestedDiscountPct !== null
+    ? `Votre demande de remise dépasse ce que je suis en mesure d'accorder : je la transmets dès aujourd'hui à votre commercial, qui revient vers vous rapidement.${ctx.analysis.requestedQuantity ? ` J'ai bien noté la quantité envisagée (${ctx.analysis.requestedQuantity}).` : ""}`
+    : null;
+
+  switch (o) {
+    case "competition":
+      return reply([hello, wa ? null : "", OBJECTION_ARGUMENTS.competition, offerLine, ...facts, ctx.escalate ? "Je partage aussi votre remarque avec votre commercial pour que nous fassions la comparaison ensemble." : null,
+        wa ? null : "", RESEARCH_QUESTIONS.competition!], "Concurrence : comparaison sur des bases identiques, conditions demandées, commercial informé.");
+    case "think_later":
+      return reply([hello, wa ? null : "", referenceAnswer("think_later", { prepared: false }), offerLine, wa ? null : "", "Lequel de ces points souhaitez-vous que je vous détaille en priorité ?"],
+        "Hésitation : recherche du vrai point de blocage, synthèse proposée.");
+    case "no_time":
+      return reply([hello, wa ? null : "", "Je comprends, je fais court.", ctx.offer ? `• Proposition ${ctx.offer.number} : ${fmt(ctx.offer.totalHt)} HT${validity ? `, valable jusqu'au ${validity}` : ""}.` : null,
+        "L'offre complète reste consultable quand cela vous convient.", wa ? null : "", "Un « OK » suffit pour valider : je m'occupe du reste ?"], "Client pressé : synthèse courte, validation simple.");
+    case "existing_supplier":
+      return reply([hello, wa ? null : "", referenceAnswer("existing_supplier", { prepared: !!ctx.offer }), offerLine, wa ? null : "", CLOSINGS.meeting], "Fournisseur en place : approche complémentaire, rendez-vous proposé.");
+    case "no_need":
+      return reply([hello, wa ? null : "", OBJECTION_ARGUMENTS.no_need, wa ? null : "", CLOSINGS.meeting], "Pas de besoin : décision respectée, échange court proposé.");
+    default:
+      break;
+  }
+
+  // Objection prix / budget : on défend la valeur avec les faits calculés par le système, puis on propose d'ajuster.
+  const priceLike = o === "too_expensive" || o === "budget";
   const valueFacts = priceLike && ctx.salesFacts?.length ? ctx.salesFacts.slice(0, wa ? 2 : 3) : [];
   const argument = priceLike && valueFacts.length
-    ? (o === "competition" ? OBJECTION_ARGUMENTS.competition : v.tone === "dynamic" ? "Je comprends, mais cette offre vaut vraiment le coup :" : "Je comprends votre attention au prix. Quelques éléments sur cette offre :")
+    ? (v.tone === "dynamic" ? "Je comprends, mais cette offre vaut vraiment le coup :" : "Je comprends votre attention au prix. Quelques éléments sur cette offre :")
     : OBJECTION_ARGUMENTS[o];
-  const parts: (string | null)[] = [hello, wa ? null : "", wa ? null : "Je vous remercie pour votre retour.", wa ? null : "", argument, ...valueFacts.map((f) => `• ${f}`), ...facts];
-  if (priceLike && !ctx.escalate && o !== "competition")
+  const parts: (string | null)[] = [hello, wa ? null : "", wa ? null : "Je vous remercie pour votre retour.", wa ? null : "", argument, ...valueFacts.map((f) => `• ${f}`), ...facts, priceLike ? offerLine : null];
+  if (priceLike && !ctx.escalate)
     parts.push(wa ? null : "", "Si le montant vous freine, je peux ajuster les quantités ou vous préparer une sélection plus courte, centrée sur les références qui tournent le plus : dites-moi simplement le budget visé.");
-  let proposed: number | null = null;
-  if (ctx.analysis.requestedDiscountPct !== null || o === "too_expensive" || o === "competition") {
-    if (ctx.escalate) {
-      parts.push(wa ? null : "", `Votre demande dépasse ce que je suis en mesure de vous accorder directement : je la transmets dès aujourd'hui à votre commercial, qui revient vers vous rapidement.${ctx.analysis.requestedQuantity ? ` J'ai bien noté la quantité envisagée (${ctx.analysis.requestedQuantity}).` : ""}`);
-    } else if (ctx.allowedDiscountPct && ctx.allowedDiscountPct > 0) {
-      proposed = ctx.allowedDiscountPct;
-      parts.push(wa ? null : "", `Pour concrétiser votre commande, je peux vous accorder un geste de ${ctx.allowedDiscountPct.toLocaleString("fr-FR")} % sur cette offre${ctx.offer ? ` (${ctx.offer.number})` : ""}.`);
-    }
-  }
+  if (discountEscalation) parts.push(wa ? null : "", discountEscalation);
   if (unknownLine) parts.push(wa ? null : "", unknownLine);
-  if (o !== "refusal") parts.push(wa ? null : "", wa ? "On valide la commande sur cette base ?" : "Souhaitez-vous que je prépare la commande sur cette base, ou préférez-vous en discuter lors d'un rendez-vous en visioconférence ?");
-  return {
-    subject,
-    body: join([...parts, ...sign]),
-    proposedDiscountPct: proposed,
-    rationale: ctx.escalate
-      ? "Demande au-delà du plafond de remise : transfert au commercial, valeur de l'offre défendue."
-      : `Réponse à l'objection « ${o} » en défendant la valeur de l'offre${proposed ? `, geste de ${proposed} % dans la limite de la politique` : ""}.`,
-  };
+  // E — engager une décision (sauf refus ; « trop cher » se termine déjà par la question du prix de vente cible)
+  if (o !== "refusal" && o !== "too_expensive")
+    parts.push(wa ? null : "", wa ? "On valide la commande sur cette base ?" : CLOSINGS.nextStep.replace("Je peux", "Je peux, si vous le souhaitez,").replace(".", " ?"));
+  return reply(parts, ctx.escalate ? "Demande au-delà du plafond de remise : transfert au commercial, valeur de l'offre défendue." : `Réponse à l'objection « ${o} » en défendant la valeur de l'offre.`);
 }
-
-const PLAYBOOK_OPENING: Partial<Record<Objection, (dynamic: boolean) => string>> = {
-  too_expensive: (d) => d ? "Je comprends, et je ne veux surtout pas vous faire acheter plus que nécessaire. J'ai repris l'analyse de vos achats :" : "Je comprends votre attention au prix. J'ai repris l'analyse de vos achats :",
-  budget: () => "Je comprends la contrainte budgétaire. J'ai recalé la proposition sur vos références prioritaires :",
-  stock_available: () => "Merci pour cette précision sur votre stock. J'ai recalculé votre couverture :",
-  no_need: () => "Entendu. Avant de clore, un point d'attention issu de vos données :",
-  not_selling: () => OBJECTION_ARGUMENTS.not_selling,
-};
 
 const lc = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
@@ -277,7 +312,8 @@ function playbookReply(
 ): ObjectionReply {
   const o = ctx.analysis.objection ?? "too_expensive";
   const gap = t.wa ? null : "";
-  const parts: (string | null)[] = [t.hello, gap, (PLAYBOOK_OPENING[o] ?? PLAYBOOK_OPENING.too_expensive!)(t.v.tone === "dynamic")];
+  // P.R.O.V.E. : ouverture adaptée à ce que les outils ont réellement analysé et préparé
+  const parts: (string | null)[] = [t.hello, gap, proveOpening(o, { prepared: !!pb.revised, analysed: pb.counterArguments.length > 0 || !!pb.declaredStock, dynamic: t.v.tone === "dynamic" })];
   if (pb.declaredStock) parts.push(`• Stock déclaré : ${Number(pb.declaredStock.qty)} pièce(s)${pb.declaredStock.productName ? ` de « ${pb.declaredStock.productName} »` : " (référence à préciser)"}.`);
   parts.push(...pb.counterArguments.slice(0, t.wa ? 2 : 3).map((a) => `• ${a}`));
   if (pb.removed.length) parts.push(gap, pb.removed.length === 1 ? `J'ai retiré « ${pb.removed[0]!.name} » : ${lc(pb.removed[0]!.reason)}` : "J'ai retiré :", ...(pb.removed.length > 1 ? pb.removed.slice(0, 3).map((r) => `• « ${r.name} » : ${lc(r.reason)}`) : []));
@@ -298,6 +334,7 @@ function playbookReply(
     rationale: pb.revised ? `Objection « ${o} » traitée par l'analyse : offre révisée ${pb.revised.number}.` : `Objection « ${o} » : offre défendue avec les données${pb.followUpDate ? ", reprise de contact planifiée" : ""}.`,
   };
 }
+
 
 export type ChatFacts = {
   question: string;
@@ -337,9 +374,10 @@ export type FollowupCtx = {
 export function mockFollowup(ctx: FollowupCtx): EmailDraft {
   const v = parseVoice(ctx.voice);
   const validity = ctx.offer ? fmtDate(ctx.offer.validUntil) : null;
+  // Chaque relance apporte un élément nouveau (validité, ajustement, rendez-vous) — jamais le même message.
   const intro = ctx.attempt <= 1
-    ? `Je me permets de revenir vers vous concernant ${ctx.offer ? `notre proposition ${ctx.offer.number}` : "notre dernier échange"}.`
-    : `Je reviens une dernière fois vers vous au sujet de ${ctx.offer ? `notre proposition ${ctx.offer.number}` : "notre échange"}.`;
+    ? `Un point utile sur ${ctx.offer ? `votre proposition ${ctx.offer.number}` : "notre dernier échange"} : je peux en ajuster les quantités à votre rythme de vente si besoin.`
+    : `Dernier point sur ${ctx.offer ? `la proposition ${ctx.offer.number}` : "notre échange"} : ${CLOSINGS.meeting.charAt(0).toLowerCase()}${CLOSINGS.meeting.slice(1)}`;
   const body = [
     greeting(ctx.contact), "", intro,
     ctx.offer ? `Elle s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? ` et reste valable jusqu'au ${validity}` : ""}.` : "",

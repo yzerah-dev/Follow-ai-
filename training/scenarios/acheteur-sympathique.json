@@ -1,0 +1,1269 @@
+[
+  {
+    "id": "acheteur-sympathique-1",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — M. Martin (Maison Martin), email",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "email",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "M.",
+        "firstName": "Paul",
+        "lastName": "Martin"
+      },
+      "customerName": "Maison Martin",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00100",
+        "totalHt": "686.40",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p0-1",
+            "reference": "R01",
+            "description": "Poêle 28 cm induction",
+            "quantity": "24",
+            "unitPriceHt": "9.90",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p0-2",
+            "reference": "R02",
+            "description": "Plaid Duo",
+            "quantity": "12",
+            "unitPriceHt": "14.50",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p0-3",
+            "reference": "R03",
+            "description": "Boîte hermétique",
+            "quantity": "30",
+            "unitPriceHt": "4.20",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p0-4",
+            "reference": "R04",
+            "description": "Bougie parfumée",
+            "quantity": "48",
+            "unitPriceHt": "3.10",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n0",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R01 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "acheteur-sympathique-2",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — Mme Robert (Bazar des Vignes), whatsapp",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "whatsapp",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "Mme",
+        "firstName": "Sophie",
+        "lastName": "Robert"
+      },
+      "customerName": "Bazar des Vignes",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00101",
+        "totalHt": "728.58",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p1-1",
+            "reference": "R11",
+            "description": "Torchons x3",
+            "quantity": "24",
+            "unitPriceHt": "10.27",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p1-2",
+            "reference": "R12",
+            "description": "Couronne Lin",
+            "quantity": "12",
+            "unitPriceHt": "14.87",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p1-3",
+            "reference": "R13",
+            "description": "Vase Classique",
+            "quantity": "30",
+            "unitPriceHt": "4.57",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p1-4",
+            "reference": "R14",
+            "description": "Photophore Bleu nuit",
+            "quantity": "48",
+            "unitPriceHt": "3.47",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n1",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R11 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "acheteur-sympathique-3",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — M. Benali (Discount Benali), email",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "email",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "M.",
+        "firstName": "Karim",
+        "lastName": "Benali"
+      },
+      "customerName": "Discount Benali",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00102",
+        "totalHt": "770.76",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p2-1",
+            "reference": "R21",
+            "description": "Gants de jardin Duo",
+            "quantity": "24",
+            "unitPriceHt": "10.64",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p2-2",
+            "reference": "R22",
+            "description": "Arrosoir Bambou",
+            "quantity": "12",
+            "unitPriceHt": "15.24",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p2-3",
+            "reference": "R23",
+            "description": "Tuyau Bambou",
+            "quantity": "30",
+            "unitPriceHt": "4.94",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p2-4",
+            "reference": "R24",
+            "description": "Semis Classique",
+            "quantity": "48",
+            "unitPriceHt": "3.84",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n2",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R21 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "acheteur-sympathique-4",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — Mme Durand (Comptoir Durand), whatsapp",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "whatsapp",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "Mme",
+        "firstName": "Claire",
+        "lastName": "Durand"
+      },
+      "customerName": "Comptoir Durand",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00103",
+        "totalHt": "812.94",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p3-1",
+            "reference": "R31",
+            "description": "Poêle 28 cm induction",
+            "quantity": "24",
+            "unitPriceHt": "11.01",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p3-2",
+            "reference": "R32",
+            "description": "Plaid Duo",
+            "quantity": "12",
+            "unitPriceHt": "15.61",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p3-3",
+            "reference": "R33",
+            "description": "Boîte hermétique",
+            "quantity": "30",
+            "unitPriceHt": "5.31",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p3-4",
+            "reference": "R34",
+            "description": "Bougie parfumée",
+            "quantity": "48",
+            "unitPriceHt": "4.21",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n3",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R31 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "acheteur-sympathique-5",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — M. Lefèvre (Hyper Lefèvre), email",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "email",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "M.",
+        "firstName": "Hugo",
+        "lastName": "Lefèvre"
+      },
+      "customerName": "Hyper Lefèvre",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00104",
+        "totalHt": "855.12",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p4-1",
+            "reference": "R41",
+            "description": "Torchons x3",
+            "quantity": "24",
+            "unitPriceHt": "11.38",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p4-2",
+            "reference": "R42",
+            "description": "Couronne Lin",
+            "quantity": "12",
+            "unitPriceHt": "15.98",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p4-3",
+            "reference": "R43",
+            "description": "Vase Classique",
+            "quantity": "30",
+            "unitPriceHt": "5.68",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p4-4",
+            "reference": "R44",
+            "description": "Photophore Bleu nuit",
+            "quantity": "48",
+            "unitPriceHt": "4.58",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n4",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R41 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "acheteur-sympathique-6",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — Mme Moreau (Marché Moreau), email",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "email",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "Mme",
+        "firstName": "Nadia",
+        "lastName": "Moreau"
+      },
+      "customerName": "Marché Moreau",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00105",
+        "totalHt": "686.40",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p5-1",
+            "reference": "R51",
+            "description": "Gants de jardin Duo",
+            "quantity": "24",
+            "unitPriceHt": "9.90",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p5-2",
+            "reference": "R52",
+            "description": "Arrosoir Bambou",
+            "quantity": "12",
+            "unitPriceHt": "14.50",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p5-3",
+            "reference": "R53",
+            "description": "Tuyau Bambou",
+            "quantity": "30",
+            "unitPriceHt": "4.20",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p5-4",
+            "reference": "R54",
+            "description": "Semis Classique",
+            "quantity": "48",
+            "unitPriceHt": "3.10",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n5",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R51 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "acheteur-sympathique-7",
+    "category": "acheteur-sympathique",
+    "title": "Acheteur sympathique : question prix puis accord",
+    "persona": "Acheteur cordial, client régulier — M. Garnier (Garnier Distribution), whatsapp",
+    "facts": {
+      "companyName": "JONAS",
+      "senderName": "Bruno Lefort",
+      "channel": "whatsapp",
+      "today": "2026-11-06",
+      "contact": {
+        "salutation": "M.",
+        "firstName": "Louis",
+        "lastName": "Garnier"
+      },
+      "customerName": "Garnier Distribution",
+      "customer": {
+        "francoAmount": "300.00",
+        "minOrderAmount": null,
+        "paymentTerms": "30 jours fin de mois"
+      },
+      "policy": {
+        "maxAutoDiscountPct": "1.00",
+        "requireDiscountApproval": false
+      },
+      "offer": {
+        "number": "OF-2026-00106",
+        "totalHt": "728.58",
+        "validUntil": "2026-12-06",
+        "lines": [
+          {
+            "productId": "p6-1",
+            "reference": "R61",
+            "description": "Poêle 28 cm induction",
+            "quantity": "24",
+            "unitPriceHt": "10.27",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-08",
+                "qty": "24"
+              },
+              {
+                "date": "2026-08-07",
+                "qty": "24"
+              },
+              {
+                "date": "2026-09-06",
+                "qty": "24"
+              },
+              {
+                "date": "2026-10-06",
+                "qty": "24"
+              }
+            ]
+          },
+          {
+            "productId": "p6-2",
+            "reference": "R62",
+            "description": "Plaid Duo",
+            "quantity": "12",
+            "unitPriceHt": "14.87",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-07-29",
+                "qty": "12"
+              },
+              {
+                "date": "2026-08-28",
+                "qty": "12"
+              },
+              {
+                "date": "2026-09-27",
+                "qty": "12"
+              },
+              {
+                "date": "2026-10-27",
+                "qty": "12"
+              }
+            ]
+          },
+          {
+            "productId": "p6-3",
+            "reference": "R63",
+            "description": "Boîte hermétique",
+            "quantity": "30",
+            "unitPriceHt": "4.57",
+            "unitsPerCase": 6,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-02-19",
+                "qty": "30"
+              },
+              {
+                "date": "2026-03-21",
+                "qty": "30"
+              },
+              {
+                "date": "2026-04-20",
+                "qty": "30"
+              }
+            ]
+          },
+          {
+            "productId": "p6-4",
+            "reference": "R64",
+            "description": "Bougie parfumée",
+            "quantity": "48",
+            "unitPriceHt": "3.47",
+            "unitsPerCase": 12,
+            "availability": "in_stock",
+            "qtyAvailable": null,
+            "availableFrom": null,
+            "purchases": [
+              {
+                "date": "2026-06-19",
+                "qty": "48"
+              },
+              {
+                "date": "2026-08-03",
+                "qty": "48"
+              },
+              {
+                "date": "2026-09-17",
+                "qty": "48"
+              },
+              {
+                "date": "2026-11-01",
+                "qty": "48"
+              }
+            ]
+          }
+        ]
+      },
+      "salesFacts": [],
+      "alternatives": [
+        {
+          "productId": "n6",
+          "name": "Nouveauté Lin naturel",
+          "unitPriceHt": "6.50",
+          "minQty": "6",
+          "reason": "Nouveauté adaptée à votre assortiment (quantité de découverte)."
+        }
+      ],
+      "documentsAttached": true,
+      "otherCustomerNames": [
+        "Carrefour Market Lyon",
+        "Leclerc Rennes"
+      ]
+    },
+    "turns": [
+      {
+        "customer": "Bonjour Léa ! Quel est le prix de la référence R61 ?",
+        "expect": {
+          "intent": "question",
+          "mustInclude": [
+            "€"
+          ]
+        }
+      },
+      {
+        "customer": "Parfait, ok pour moi, vous pouvez lancer la commande.",
+        "expect": {
+          "intent": "accept",
+          "mustInclude": [
+            "commande"
+          ]
+        }
+      }
+    ]
+  }
+]

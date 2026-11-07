@@ -10,7 +10,7 @@ import type { LlmProvider } from "@/lib/ai/types";
 import { detectInjection, wrapUntrusted } from "@/lib/security/untrusted";
 import { audit } from "@/lib/security/audit";
 import { evaluateDiscount, type CommercialPolicy } from "@/features/offers/policy";
-import { ANALYST_SYSTEM, leaSystem } from "./prompts";
+import { ANALYST_SYSTEM, leaSystem, LEA_PROMPT_VERSION } from "./prompts";
 import { parseVoice } from "./voice";
 import { offerSalesFacts } from "./arguments";
 import { negotiate } from "./negotiation";
@@ -21,7 +21,7 @@ import { buildTemplate } from "@/features/conversations/templates";
 import { toE164, isMobileFr } from "@/lib/phone";
 import { formatMoney } from "@/lib/money";
 import { formatDate, toIsoDate } from "@/lib/utils";
-import { checkMessage } from "./guards";
+import { checkMessage, amountsInText } from "./guards";
 import { loadPolicy, loadAutonomy } from "@/features/settings/policy-repo";
 import { decideAutonomy, type AutonomyDecision } from "./autonomy";
 import { dispatchMessage, type DispatchResult } from "@/features/conversations/dispatch";
@@ -33,7 +33,7 @@ async function recordRun(db: Db, orgId: string, kind: string, actor: Actor, llm:
   const r = await db.query<{ id: string }>(
     `insert into agent_runs (organization_id, kind, status, input, output, provider, model, tokens_in, tokens_out, cost_usd, triggered_by, started_at, finished_at)
      values ($1,$2,'succeeded',$3,$4,$5,$6,$7,$8,$9,$10, now(), now()) returning id`,
-    [orgId, kind, input, output, llm.name, llm.model, usage.inputTokens, usage.outputTokens, estimateCostUsd(llm.model, usage), actor.userId],
+    [orgId, kind, { ...(input as object), promptVersion: LEA_PROMPT_VERSION }, output, llm.name, llm.model, usage.inputTokens, usage.outputTokens, estimateCostUsd(llm.model, usage), actor.userId],
   );
   return r.rows[0]!.id;
 }
@@ -136,7 +136,8 @@ Données vérifiées du système (seules sources autorisées) :
 ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
   const res = await llm.structured({ task: "draft_offer_email", system: leaSystem(sender.voice, sender.companyName), input, schema: emailDraftSchema, context });
   let draft = res.data;
-  const guard = checkMessage(draft.body, { allowedDiscountPct: maxLineDiscount > 0 ? maxLineDiscount : null, personalizedAllowed: history >= 3 && usual.length > 0 });
+  const knownAmounts = [offer.total_ht, offer.discount_total_ht, ...lines.flatMap((l) => [l.line_total_ht])];
+  const guard = checkMessage(draft.body, { allowedDiscountPct: maxLineDiscount > 0 ? maxLineDiscount : null, personalizedAllowed: history >= 3 && usual.length > 0, knownAmounts });
   const guardNotes: string[] = [];
   if (!guard.ok) {
     // Repli sûr : gabarit déterministe, et on garde la trace du rejet.
@@ -334,7 +335,13 @@ Historique de la conversation (du plus ancien au plus récent) :
 ${wrapUntrusted("conversation_history", history.map((h) => `${h.direction === "inbound" ? "CLIENT" : "NOUS"} : ${h.body}`).join("\n---\n"), 6000)}`;
   const res = await llm.structured({ task: "draft_objection_reply", system: leaSystem(sender.voice, sender.companyName), input, schema: objectionReplySchema, context });
   let reply = res.data;
-  const guard = checkMessage(reply.body, { allowedDiscountPct: allowed, personalizedAllowed: true });
+  // Montants autorisés : offre (et offre révisée), lignes, conditions du compte, réponses factuelles, montants cités par le client.
+  const knownAmounts = [
+    currentOffer?.total_ht, offer?.total_ht, facts.offer?.totalHt, facts.offer?.totalTtc, facts.customer.francoAmount, facts.customer.minOrderAmount,
+    ...(facts.offer?.lines ?? []).flatMap((l) => [l.unitPriceHt, (Number(l.quantity) * Number(l.unitPriceHt)).toFixed(2)]),
+    ...answers.flatMap((a) => amountsInText(a)), ...amountsInText(inbound.body),
+  ];
+  const guard = checkMessage(reply.body, { allowedDiscountPct: allowed, personalizedAllowed: true, knownAmounts });
   const guardNotes: string[] = [];
   if (!guard.ok || (reply.proposedDiscountPct ?? 0) > (allowed ?? 0)) {
     guardNotes.push(...(guard.ok ? ["Remise proposée par l'IA supérieure à la décision du système."] : guard.reasons));
@@ -385,6 +392,14 @@ ${wrapUntrusted("conversation_history", history.map((h) => `${h.direction === "i
        on conflict (organization_id, idempotency_key) do nothing`,
       [orgId, m.customer_id, m.conversation_id, m.offer_id, `Répondre au client — ${unknownLabels.join(", ")} (${m.customer_name})`, `reply:${inboundId}`, inbound.body.slice(0, 500)],
     );
+  }
+  if (analysis.intent === "complaint" && m.customer_id) {
+    // Service client (Academy, module 13) : la logistique vérifie le statut réel ; aucun délai n'est annoncé au client.
+    await db.query(
+      `insert into followup_tasks (organization_id, customer_id, conversation_id, offer_id, kind, title, due_at, assigned_user_id, idempotency_key, notes, created_by_agent)
+       select $1, $2, $3, $4, 'escalation', $5, now() + interval '2 hours', cu.owner_user_id, $6, $7, true from customers cu where cu.id = $2
+       on conflict (organization_id, idempotency_key) do nothing`,
+      [orgId, m.customer_id, m.conversation_id, m.offer_id, `Réclamation livraison — vérifier le statut (${m.customer_name})`, `complaint:${inboundId}`, inbound.body.slice(0, 500)]);
   }
   if (analysis.intent === "meeting_request" && m.customer_id) {
     await db.query(
@@ -437,7 +452,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   });
   let draft = res.data;
   const guardNotes: string[] = [];
-  const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: false });
+  const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: false, knownAmounts: [offer?.total_ht] });
   if (!guard.ok) {
     guardNotes.push(...guard.reasons);
     draft = mockFollowup(context);
@@ -521,7 +536,7 @@ export async function draftMeetingProposal(db: Db, orgId: string, opportunityId:
   });
   let draft = res.data;
   const guardNotes: string[] = [];
-  const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: permanentsCount > 0 });
+  const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: permanentsCount > 0, knownAmounts: [] });
   if (!guard.ok || /(baisse|retard|objectif|chiffre d'affaires)/i.test(draft.body)) {
     guardNotes.push(...(guard.ok ? ["Analyse interne mentionnée au client."] : guard.reasons));
     draft = mockMeetingProposal(context);

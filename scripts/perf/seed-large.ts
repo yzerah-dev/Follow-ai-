@@ -48,7 +48,7 @@ await step("produits", c, `
          'Marque ' || (1 + g % 25), 'Article ' || g || ' ' || (array['Classique','Premium','Duo','Bambou','Vintage','Bleu nuit'])[1 + g % 6],
          'Catégorie ' || (1 + (g * 7) % 40), (array[6,12,24])[1 + g % 3], round((1 + (g % 97) * 0.37)::numeric, 2),
          (case when g % 20 = 0 then 'out_of_stock' when g % 20 = 1 then 'low_stock' when g % 20 = 2 then 'unknown' else 'in_stock' end)::availability_status,
-         g % 50 = 0, case when g % 50 = 0 then $2::date - (g % 60) end, 'active'
+         g % 47 = 0, case when g % 47 = 0 then $2::date - (g % 60) end, 'active'
   from generate_series(1, $3) g`, [org, PERF_TODAY, PRODUCTS]);
 await step("variantes", c, `
   insert into product_variants (organization_id, product_id, reference, ean, label, attributes)
@@ -62,7 +62,7 @@ await step("photos produits", c, `
 
 await step("clients", c, `
   insert into customers (organization_id, external_code, legal_name, city, status, franco_amount)
-  select $1, 'C' || lpad(g::text, 5, '0'), case when g <= $3 then 'Grand compte ' || g else 'Magasin ' || g end, 'Ville ' || (g % 300), 'active', 300
+  select $1, 'C' || lpad(g::text, 5, '0'), case when g <= 10 then 'Centrale ' || g when g <= $3 then 'Grand compte ' || g else 'Magasin ' || g end, 'Ville ' || (g % 300), 'active', 300
   from generate_series(1, $2) g`, [org, CUSTOMERS, BIG]);
 
 // Factures : grands comptes tous les 28 jours (40 factures), autres tous les ~52 jours (21 factures)
@@ -74,16 +74,19 @@ await step("factures", c, `
        generate_series(0, 39) k
   where k < case when cu.n <= $3 then 40 else 21 end`, [org, PERF_TODAY, BIG]);
 
-// Lignes : grands comptes = 15 références permanentes (chaque facture) + 15 tournantes parmi un répertoire de 400 ;
-// magasins = 2 références parmi un répertoire de 8. Produits retirés du catalogue de temps en temps (product_id null).
+// Lignes : 10 centrales d'achat = 240 références permanentes + 20 tournantes (chaque facture) ;
+// grands comptes = 15 références permanentes (chaque facture) + 15 tournantes parmi un répertoire de 400 ;
+// magasins = 2 références parmi un répertoire de 8.
 await step("lignes de factures", c, `
   insert into invoice_lines (organization_id, invoice_id, line_no, product_id, product_reference, description, quantity, unit_price_ht, line_total_ht, units_per_case)
   select $1, i.id, j + 1, p.id, p.reference, p.name, q.qty, p.sale_price_ht, round(q.qty * p.sale_price_ht, 2), p.units_per_case
   from (select i.id, cu.n, row_number() over (partition by i.customer_id order by i.invoice_date) as k
         from invoices i join (select id, substr(external_code, 2)::int as n from customers where organization_id = $1) cu on cu.id = i.customer_id
         where i.organization_id = $1) i
-  cross join lateral generate_series(0, case when i.n <= $2 then 29 else 1 end) j
+  cross join lateral generate_series(0, case when i.n <= 10 then 259 when i.n <= $2 then 29 else 1 end) j
   cross join lateral (select case
+            when i.n <= 10 and j < 240 then (i.n * 997 + j * 7) % $3
+            when i.n <= 10 then (i.n * 997 + 240 * 7 + ((i.k * 20 + j) % 400) * 29) % $3
             when i.n <= $2 and j < 15 then (i.n * 131 + j * 17) % $3
             when i.n <= $2 then (i.n * 131 + 15 * 17 + ((i.k * 15 + j) % 385) * 23) % $3
             else (i.n * 37 + ((i.k + j * 3) % 8) * 11) % $3 end + 1 as pn) pick

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Moteur d'opportunités hybride — partie déterministe.
  * Chaque opportunité porte sa justification, sa confiance, ses sources et une valeur ESTIMÉE
@@ -95,6 +96,13 @@ export function buildCatalogIndex(products: EngineProduct[], prices: PriceRow[])
     newProducts: products.filter((p) => p.status === "active" && p.isNew && p.category && p.availability !== "out_of_stock"),
   };
 }
+
+/**
+ * Clé de dédoublonnage : liste d'identifiants en clair jusqu'à 8 produits, empreinte SHA-1 au-delà
+ * (une clé de 240 identifiants dépasse la taille maximale d'une entrée d'index PostgreSQL).
+ */
+export const idsKey = (prefix: string, customerId: string, ids: string[]) =>
+  ids.length <= 8 ? `${prefix}:${customerId}:${ids.join(",")}` : `${prefix}:${customerId}:h${ids.length}:${createHash("sha1").update(ids.join(",")).digest("hex")}`;
 
 /** Liste de références lisible même pour 200 produits : les 8 premières puis « et N autres ». */
 const refList = (refs: (string | undefined)[]) => {
@@ -196,7 +204,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
             orders: h.orders,
           })),
         },
-        dedupeKey: `reorder:${customer.id}:${ids.join(",")}`,
+        dedupeKey: idsKey("reorder", customer.id, ids),
         expiresAt: expires(settings.reorderLookaheadDays + 14),
       });
     }
@@ -261,7 +269,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
       suggestedDate: toIsoDate(addDays(today, 3)),
       dataSources: ["catalogue produits", "historique par catégorie"],
       details: { categories: [...strongCats] },
-      dedupeKey: `new:${customer.id}:${ids.join(",")}`,
+      dedupeKey: idsKey("new", customer.id, ids),
       expiresAt: expires(30),
     });
   }
@@ -292,7 +300,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
         suggestedDate: toIsoDate(addDays(today, 5)),
         dataSources: ["co-achats sur l'ensemble des factures de l'organisation"],
         details: { scores: Object.fromEntries(best) },
-        dedupeKey: `cross:${customer.id}:${ids.join(",")}`,
+        dedupeKey: idsKey("cross", customer.id, ids),
         expiresAt: expires(30),
       });
     }
@@ -333,7 +341,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
         suggestedDate: today,
         dataSources: ["relevés de stock", "historique d'achat"],
         details: { restocks: back },
-        dedupeKey: `back:${customer.id}:${ids.join(",")}`,
+        dedupeKey: idsKey("back", customer.id, ids),
         expiresAt: expires(21),
       });
     }

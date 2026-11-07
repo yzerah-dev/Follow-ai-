@@ -26,7 +26,7 @@ const RULES: { topic: Topic; re: RegExp }[] = [
   { topic: "price", re: /(prix|tarif|co[uû]te|combien|€ (l'unité|pièce)|prix unitaire)/i },
   { topic: "availability", re: /(stock|disponib|dispo\b|en rupture|vous (en )?avez)/i },
   { topic: "franco", re: /(franco|frais de port|port offert|frais de livraison|transport)/i },
-  { topic: "delivery_time", re: /(délai|delai|quand (serons|serai|sera|pourriez|pouvez)|date de livraison|livr(é|e|er) (quand|sous)|sous combien de temps)/i },
+  { topic: "delivery_time", re: /(délai|delai|(serai|serons|sera|être) livr|quand (serons|serai|sera|pourriez|pouvez)|date de livraison|livr(é|e|er) (quand|sous)|sous combien de temps)/i },
   { topic: "payment", re: /(paiement|payer|règlement|reglement|facturation|échéance|traite|virement|chèque)/i },
   { topic: "packaging", re: /(colis|carton|colisage|conditionn|par combien|pcb|à l'unité)/i },
   { topic: "minimum", re: /(minimum|mini de commande|commande minimale)/i },

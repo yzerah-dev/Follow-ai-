@@ -126,6 +126,10 @@ export function runPlaybook(i: PlaybookInput): PlaybookResult {
   const changed = items.length > 0 && (removed.length > 0 || kept.some((k) => !k.qty.eq(dec(k.l.quantity))) || i.objection === "not_selling");
   const priceGuard = i.objection === "not_selling" || total.lt(original);
 
+  // « Pas besoin » : pas de nouvelle offre envoyée d'office (pression excessive). Un seul point d'attention chiffré, et un échange court.
+  if (i.objection === "no_need" && items.length)
+    return { ...base, removed: [], counterArguments: args.slice(0, 1), strategy: "hold", question: "Je vous propose un point de 15 minutes pour faire le tour de ces références. Quel créneau vous conviendrait ?",
+      rationale: "Pas de besoin exprimé : décision respectée, point d'attention signalé, rendez-vous court proposé (aucune offre envoyée)." };
   if (!items.length || !changed || !priceGuard) {
     if (i.objection === "stock_available") {
       const covered = rows.map((r) => r.c?.coverageDays).filter((d): d is number => d !== null && d !== undefined);

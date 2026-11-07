@@ -108,7 +108,8 @@ export async function selectForCustomer(db: Db, orgId: string, customerId: strin
      from invoices i join invoice_lines l on l.invoice_id = i.id and l.organization_id = i.organization_id join products p on p.id = l.product_id
      where i.organization_id = $1 and i.customer_id = $2 and i.status = 'issued' and i.doc_type = 'invoice' and i.invoice_date > ($3::date - 365) and p.category is not null
      group by 1`, [orgId, customerId, today])).rows;
-  const strongCats = cats.filter((c) => Number(c.share) >= 0.05).map((c) => c.category);
+  // Catégories travaillées : ≥ 5 % du CA, et pour les comptes très diversifiés (grands distributeurs) les 8 premières catégories.
+  const strongCats = [...new Set([...cats.filter((c) => Number(c.share) >= 0.05), ...[...cats].sort((a, b) => Number(b.share) - Number(a.share)).slice(0, 8)].map((c) => c.category))];
   lap("catégories");
 
   // 6. Complémentaires : produits co-achetés (mêmes factures) avec les 60 références principales du client, sur 12 mois

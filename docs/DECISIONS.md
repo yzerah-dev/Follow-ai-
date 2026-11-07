@@ -36,3 +36,7 @@
 | D32 | Éditeur virtualisé maison, sauvegarde automatique avec révision | Pas de dépendance de tableau ; fluide à 1 000 lignes ; le serveur reste maître des prix et des totaux |
 | D33 | Générations lourdes en tâches (`creative_jobs`) exécutées après la réponse (`after()`) et reprises par le cron | Pas d'attente bloquante ; progression visible ; reprise à l'étape près ; remplaçable par une file dédiée (Inngest) |
 | D34 | Suppression de lignes d'offre ouverte aux rôles d'écriture | Exclure des produits fait partie de l'édition commerciale courante ; tracé dans l'historique |
+| D35 | Formation = instructions versionnées + outils + évaluation, pas d'« entraînement » du modèle | Un prompt n'entraîne pas un modèle de base ; le comportement mesurable vient des outils déterministes et des évaluations continues |
+| D36 | Évaluateur déterministe (règles explicites) | Reproductible, gratuit, utilisable en régression ; complété plus tard par une revue humaine / un juge IA si souhaité |
+| D37 | Garde-fous « délai non confirmé » et « montant non vérifié » en production | Les tests adverses ont montré qu'un modèle réel pourrait inventer une date ou un prix sans être bloqué |
+| D38 | « Pas besoin » : aucune offre envoyée d'office | Éviter la pression commerciale excessive ; un point chiffré et un rendez-vous court suffisent |
