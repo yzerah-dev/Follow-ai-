@@ -36,7 +36,8 @@ describe("WhatsApp : LÉA engage et mène la discussion", () => {
     const m = await lastOutbound(waConv);
     expect(m).toMatchObject({ channel: "whatsapp", status: "simulated_sent", subject: null, sent_autonomously: true });
     expect(m.ai_analysis.template?.name).toBe("offre_disponible");
-    expect(m.body).toMatch(/^Bonjour .+, votre proposition OF-2026-\d{5} est prête/);
+    expect(m.body).toMatch(/^Bonjour .+ 👋 .+ Je vous ai préparé la proposition OF-2026-\d{5} : /);
+    expect(m.body).toContain("Je vous la valide ?");
     const att = (await q<{ attachments: { filename: string }[] }>(`select attachments from messages where conversation_id = $1 and direction = 'outbound'`, [waConv]))[0]!.attachments;
     expect(att.map((a) => a.filename)).toEqual([expect.stringMatching(/\.pdf$/)]); // WhatsApp : PDF seulement
   });
@@ -53,8 +54,12 @@ describe("WhatsApp : LÉA engage et mène la discussion", () => {
     const facts = (await q<{ franco: string | null }>(`select cu.franco_amount as franco from conversations c join customers cu on cu.id = c.customer_id where c.id = $1`, [waConv]))[0]!;
     if (facts.franco) expect(m.body).toContain("franco");
     else expect(m.body).toContain("je vérifie auprès de votre commercial");
-    expect(m.body).toContain("— LÉA");
+    expect(m.body).toContain("— LÉA, assistante commerciale de");
     expect(m.body).not.toMatch(/Bien cordialement/);
+    // Une commerciale, pas un automate : elle répond bonjour, remercie et conclut vers la commande.
+    expect(m.body).toMatch(/^Bonjour .+ !/);
+    expect(m.body).toMatch(/Merci pour votre message/);
+    expect(m.body).toMatch(/On lance la commande \?/);
   });
 
   it("question sans donnée fiable : LÉA ne l'invente pas, prévient le client et le commercial", async () => {

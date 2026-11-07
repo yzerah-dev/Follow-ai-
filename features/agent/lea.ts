@@ -94,6 +94,23 @@ async function loadFacts(db: Db, customerId: string | null, offerId: string | nu
   return { offer, customer: { francoAmount: cu?.franco_amount ?? null, minOrderAmount: cu?.min_order_amount ?? null, paymentTerms: cu?.payment_terms ?? null } };
 }
 
+export type HookFacts = { opportunityType: string | null; salesFacts: string[]; usualInOffer: number; newProductNames: string[] };
+
+/**
+ * Accroche du premier message WhatsApp : une phrase qui donne au client une raison d'acheter MAINTENANT.
+ * Construite uniquement à partir de faits calculés par le système (arguments vérifiés, situation de l'opportunité, historique).
+ */
+export function offerHook(f: HookFacts): string {
+  const limited = f.salesFacts.find((s) => s.startsWith("Stock limité"));
+  if (limited) return `${limited} Je préfère vous prévenir avant qu'il ne parte.`;
+  if (f.opportunityType === "reorder" && f.usualInOffer > 0) return `Au rythme de vos dernières commandes, vos références habituelles arrivent bientôt en fin de stock chez vous : il ne faudrait pas rater de ventes.`;
+  if (f.opportunityType === "dormant_customer") return "Cela fait un moment qu'on ne s'est pas parlé, et j'ai de quoi relancer vos ventes.";
+  if (f.newProductNames.length) return `On vient de recevoir des nouveautés qui collent parfaitement à votre magasin, dont « ${f.newProductNames[0]} ».`;
+  if (f.salesFacts.length) return f.salesFacts[0]!;
+  if (f.usualInOffer > 0) return "J'ai repris vos références qui marchent le mieux chez vous pour que vous ne soyez jamais en rupture.";
+  return "J'ai sélectionné pour vous des références adaptées à votre magasin.";
+}
+
 /**
  * Compose l'email d'accompagnement d'une offre (sans l'enregistrer).
  * Offres volumineuses : le modèle reçoit un RÉSUMÉ (catégories, 25 lignes prioritaires), jamais le catalogue ni toutes les lignes.
@@ -144,12 +161,13 @@ ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
     guardNotes.push(...guard.reasons);
     draft = mockOfferEmail(context);
   }
-  return { offer, contact, sender, draft, guardNotes, res, llm, maxLineDiscount, history };
+  const hookFacts: HookFacts = { opportunityType, salesFacts, usualInOffer: lines.filter((l) => usual.includes(l.reference)).length, newProductNames: context.newProductNames };
+  return { offer, contact, sender, draft, guardNotes, res, llm, maxLineDiscount, history, hookFacts };
 }
 
 /** Rédige l'email d'accompagnement d'une offre → message (envoyé seul ou en attente de validation selon l'autonomie). */
 export async function draftOfferEmail(db: Db, orgId: string, offerId: string, actor: Actor, opts: { autonomous?: boolean; now?: Date } = {}) {
-  const { offer, contact, sender, draft, guardNotes, res, llm, maxLineDiscount, history } = await composeOfferEmail(db, orgId, offerId, actor, opts);
+  const { offer, contact, sender, draft, guardNotes, res, llm, maxLineDiscount, history, hookFacts } = await composeOfferEmail(db, orgId, offerId, actor, opts);
   const runId = await recordRun(db, orgId, "message_draft", actor, llm, { offerId, task: "draft_offer_email" }, { draft, guardNotes }, res.usage);
 
   // Canal : email (offre complète + pièces jointes) ou WhatsApp (modèle approuvé + PDF) si c'est le seul canal autorisé.
@@ -159,7 +177,7 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
   let template: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (channel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || offer.customer_name;
-    const t = buildTemplate("offre_disponible", [name, offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", sender.companyName]);
+    const t = buildTemplate("offre_disponible", [name, offerHook(hookFacts), offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", `${sender.voice.assistantTitle} de ${sender.companyName}`]);
     body = t.text;
     subject = null;
     template = t.template;
@@ -306,7 +324,9 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
         followUpDate: negotiation.result.followUpDate, declaredStock: negotiation.declaredStock,
         revised: negotiation.revised ? { number: negotiation.revised.number, totalHt: negotiation.revised.totalHt, originalTotalHt: offer?.total_ht ?? negotiation.result.originalTotalHt, documents: negotiation.revised.documents } : null }
     : null;
-  const salesFacts = m.offer_id && !negotiation?.revised && ["too_expensive", "budget", "competition"].includes(analysis.objection ?? "") ? await offerSalesFacts(db, orgId, m.offer_id, today) : [];
+  // Arguments de valeur : objection prix, mais aussi question à laquelle LÉA répond (une commerciale relance toujours la vente).
+  const salesFacts = m.offer_id && !negotiation?.revised && (["too_expensive", "budget", "competition"].includes(analysis.objection ?? "") || (analysis.intent === "question" && answers.length > 0)) ? await offerSalesFacts(db, orgId, m.offer_id, today) : [];
+  const clientGreeted = /^\s*(bonjour|bonsoir|salut|hello|coucou|bjr)\b/i.test(inbound.body);
   const context = {
     playbook,
     salesFacts,
@@ -321,10 +341,12 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
     answers,
     unknownLabels,
     turn,
+    clientGreeted,
   };
   const input = `Rédige la réponse au client. Décision du système sur la remise (à respecter strictement) : ${decisionText}
 Remise maximale utilisable dans ce message : ${allowed ?? 0} %. ${escalate ? "Le dossier est transféré au commercial : annonce-le sans rien promettre." : ""}
 Canal : ${channel === "whatsapp" ? "WhatsApp — messages courts, ton de messagerie, pas d'objet" : "email"}.
+Tu es une COMMERCIALE, pas un automate : ${clientGreeted || turn === 0 ? "commence par saluer le client par son nom (il t'a dit bonjour), " : ""}remercie-le, réponds en une phrase naturelle (pas une liste brute), ajoute UN argument de vente vérifié s'il y en a, puis conclus par une question qui propose de lancer la commande.
 Réponses factuelles autorisées (n'en invente aucune autre) : ${answers.length ? answers.join(" | ") : "aucune"}.
 Arguments de valeur vérifiés (objection prix) : ${salesFacts.length ? salesFacts.join(" | ") : "aucun"}.
 ${playbook ? `PLAYBOOK (décision du système, à suivre) : stratégie « ${playbook.strategy} ». Contre-arguments chiffrés à utiliser tels quels : ${playbook.counterArguments.join(" | ") || "aucun"}. Références retirées : ${playbook.removed.map((r) => `${r.name} (${r.reason})`).join(" | ") || "aucune"}. ${playbook.revised ? `Offre révisée ${playbook.revised.number} : ${playbook.revised.totalHt} € HT au lieu de ${playbook.revised.originalTotalHt} € HT, documents joints : ${playbook.revised.documents.join(", ")}.` : ""} ${playbook.followUpDate ? `Reprise de contact proposée le ${playbook.followUpDate}.` : ""} Question de clôture : ${playbook.question || "aucune"}. Les estimations doivent être présentées comme des estimations.` : ""}
@@ -475,7 +497,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   let ftemplate: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (fchannel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || "";
-    const tpl = buildTemplate("relance_offre", [name || "et merci", offer?.number ?? "", sender.companyName]);
+    const tpl = buildTemplate("relance_offre", [name || "à vous", offer?.number ?? "", `${sender.voice.assistantTitle} de ${sender.companyName}`]);
     draft = { ...draft, subject: draft.subject, body: tpl.text };
     ftemplate = tpl.template;
   }
@@ -545,7 +567,7 @@ export async function draftMeetingProposal(db: Db, orgId: string, opportunityId:
   let template: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (channel === "whatsapp") {
     const name = [contact.ctx?.salutation === "Mme" ? "Madame" : contact.ctx?.salutation === "M." ? "Monsieur" : null, contact.ctx?.lastName ?? contact.ctx?.firstName].filter(Boolean).join(" ") || opp.customer_name;
-    const t = buildTemplate("proposition_rdv", [name, MEETING_FORMAT_LABEL[format], sender.companyName]);
+    const t = buildTemplate("proposition_rdv", [name, MEETING_FORMAT_LABEL[format], `${sender.voice.assistantTitle} de ${sender.companyName}`]);
     body = t.text;
     template = t.template;
   }

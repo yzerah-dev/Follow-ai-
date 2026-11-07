@@ -39,6 +39,7 @@ export type ObjectionCtx = {
   answers: string[]; // réponses factuelles calculées (features/agent/answers.ts)
   unknownLabels: string[]; // sujets sans donnée fiable → transmis au commercial
   turn: number; // nombre de réponses déjà envoyées dans la conversation
+  clientGreeted?: boolean; // le client a dit bonjour : une commerciale répond bonjour
   voice?: Voice;
   salesFacts?: string[];
   playbook?: PlaybookCtx | null;
@@ -197,7 +198,8 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
   const wa = ctx.channel === "whatsapp";
   const subject = ctx.offer ? `RE: Proposition ${ctx.offer.number}` : "RE: Votre message";
   // WhatsApp : ton de messagerie, court ; pas de formule d'appel répétée au fil de la discussion.
-  const hello = wa ? (ctx.turn > 0 ? null : `${greeting(ctx.contact).replace(/,$/, " !")}${emoji(v, "whatsapp", "👋")}`) : greeting(ctx.contact);
+  // WhatsApp : on salue au premier échange et chaque fois que le client dit bonjour (jamais de réponse « sèche »).
+  const hello = wa ? (ctx.turn > 0 && !ctx.clientGreeted ? null : `${greeting(ctx.contact).replace(/,$/, " !")}${emoji(v, "whatsapp", "👋")}`) : greeting(ctx.contact);
   const sign = signoff(v, ctx.senderName, ctx.companyName, ctx.channel);
   const facts = ctx.answers.length ? (wa ? ctx.answers.map((a) => `• ${a}`) : ["", ...ctx.answers.map((a) => `• ${a}`)]) : [];
   const unknownLine = ctx.unknownLabels.length
@@ -231,6 +233,18 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
       body: join([hello, wa ? null : "", "Avec plaisir. Je vous propose un point de 15 minutes, en visioconférence ou au showroom selon votre préférence.", "Quel créneau vous conviendrait cette semaine ou la suivante ? Votre commercial confirmera le rendez-vous.", ...sign]),
       proposedDiscountPct: null,
       rationale: "Demande de rendez-vous : prise de contact par le commercial (aucun créneau inventé).",
+    };
+  }
+  if ((ctx.analysis.intent === "question" || (ctx.answers.length && !ctx.analysis.objection)) && wa && ctx.answers.length) {
+    // WhatsApp : réponse de commerciale — remerciement, faits en phrases courtes, un argument de vente vérifié, conclusion.
+    const pitch = ctx.salesFacts?.[0] ?? null;
+    return {
+      subject,
+      body: join([hello, `Merci pour votre message${emoji(v, "whatsapp", "🙏")}`, ...ctx.answers,
+        pitch ? `${pitch}${emoji(v, "whatsapp", "🔥")}` : null, unknownLine,
+        `On lance la commande ? Un simple « OK » et je m'occupe de tout${emoji(v, "whatsapp", "🚀")}`, ...sign]),
+      proposedDiscountPct: null,
+      rationale: `Réponse factuelle à partir des données (${ctx.answers.length} élément(s))${pitch ? ", argument de vente vérifié" : ""}${ctx.unknownLabels.length ? `, ${ctx.unknownLabels.join(", ")} transmis au commercial` : ""}, conclusion vers la commande.`,
     };
   }
   if (ctx.analysis.intent === "question" || (ctx.answers.length && !ctx.analysis.objection)) {

@@ -34,7 +34,7 @@ describe("Règle WhatsApp des 24 h", () => {
 describe("Modèles WhatsApp", () => {
   it("remplit les variables et nettoie les paramètres", () => {
     const t = buildTemplate("relance_offre", ["Monsieur\nMartin", "OF-2026-00001", "JONAS"]);
-    expect(t.text).toBe("Bonjour Monsieur Martin, je reviens vers vous au sujet de la proposition OF-2026-00001. Souhaitez-vous que je prépare la commande ? Répondez simplement à ce message. — LÉA, JONAS");
+    expect(t.text).toBe("Bonjour Monsieur Martin 👋 Je reviens vers vous au sujet de la proposition OF-2026-00001, elle est toujours valable. Je vous prépare la commande ? Un simple « OK » suffit. — LÉA, JONAS");
     expect(t.template).toEqual({ name: "relance_offre", language: "fr", params: ["Monsieur Martin", "OF-2026-00001", "JONAS"] });
     expect(() => buildTemplate("relance_offre", ["x"])).toThrow(/3 paramètre/);
   });
@@ -108,17 +108,33 @@ describe("Style des réponses selon le canal", () => {
     offer: { number: "OF-1", totalHt: "100", validUntil: null }, allowedDiscountPct: null, escalate: false, senderName: "LÉA", companyName: "JONAS",
     answers: ["Votre franco de port est de 800,00 € HT."], unknownLabels: [] as string[],
   };
-  it("WhatsApp : court, signé LÉA, pas de formule répétée après le premier échange", () => {
+  it("WhatsApp : signé LÉA, salue quand le client salue, remercie et conclut vers la commande", () => {
     const first = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 0 });
     expect(first.body.startsWith("Bonjour Monsieur Martin !")).toBe(true);
     expect(first.body).toContain("— LÉA, assistante commerciale de JONAS");
     expect(first.body).not.toContain("Bien cordialement");
+    expect(first.body).toContain("Merci pour votre message");
+    expect(first.body).toContain("On lance la commande ?");
+    expect(first.body).not.toContain("•");
+    // En cours de discussion : pas de « Bonjour » répété… sauf si le client vient de dire bonjour.
     const later = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 2 });
-    expect(later.body.startsWith("•")).toBe(true);
+    expect(later.body.startsWith("Merci pour votre message")).toBe(true);
+    const greeted = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 2, clientGreeted: true });
+    expect(greeted.body.startsWith("Bonjour Monsieur Martin !")).toBe(true);
   });
   it("Email : formules complètes", () => {
     const e = mockObjectionReply({ ...ctx, channel: "email", turn: 0 });
     expect(e.body).toContain("Bonjour Monsieur Martin,");
     expect(e.body).toContain("Bien cordialement,");
+  });
+});
+
+describe("accroche du premier message WhatsApp", () => {
+  it("donne une raison d'acheter, issue des faits du système", async () => {
+    const { offerHook } = await import("@/features/agent/lea");
+    expect(offerHook({ opportunityType: "reorder", salesFacts: [], usualInOffer: 3, newProductNames: [] })).toMatch(/réassort/);
+    expect(offerHook({ opportunityType: null, salesFacts: ["Stock limité sur « Bougie » : 40 pièces disponibles à ce jour."], usualInOffer: 0, newProductNames: [] })).toMatch(/^Stock limité.+prévenir/);
+    expect(offerHook({ opportunityType: "new_product", salesFacts: [], usualInOffer: 0, newProductNames: ["Lampe Lin"] })).toContain("« Lampe Lin »");
+    expect(offerHook({ opportunityType: null, salesFacts: [], usualInOffer: 0, newProductNames: [] })).toBe("J'ai sélectionné pour vous des références adaptées à votre magasin.");
   });
 });

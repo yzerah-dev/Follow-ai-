@@ -78,6 +78,12 @@ export function answerFromFacts(topics: Topic[], facts: Facts, text: string): { 
           break;
         }
         const unknownNames: string[] = [];
+        // Tout est disponible (≥ 2 lignes) : une phrase claire plutôt qu'une liste ligne par ligne.
+        const allIn = focus.length >= 2 && focus.every((l) => !["unknown", "out_of_stock", "on_order"].includes(l.availability) && (l.qtyAvailable === null || dec(l.qtyAvailable).gte(dec(l.quantity))));
+        if (allIn) {
+          answers.push(focus.length === o.lines.length ? "Toutes les références de votre proposition sont disponibles en stock pour les quantités proposées." : `${focus.map((l) => l.description).join(", ")} : disponibles en stock pour les quantités proposées.`);
+          break;
+        }
         for (const l of focus) {
           if (l.availability === "unknown") unknownNames.push(l.description);
           else if (l.availability === "out_of_stock" || l.availability === "on_order")

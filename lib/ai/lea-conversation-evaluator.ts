@@ -80,7 +80,7 @@ const SALES_PITCH = /(nouvelle proposition|je vous propose (de valider|une|un no
 const ACK = /(je comprends|bien entendu|bien compris|entendu|merci (de|pour)|c.est possible|tr[èe]s bien|avec plaisir|bonjour)/i;
 const SOLUTION = /(je vous propose|je peux|regardons|comparons|nouvelle proposition|je vous recommande|je vais v[ée]rifier|je transmets|je reviens vers vous|je vous ai pr[ée]par)/i;
 const PROOF = /(\d|historique|donn[ée]es|analys|couverture|rotation|colisage|marge|confirm)/i;
-const CLOSING = /(\?\s*(—|$|\n)|\?\s*$|je vous propose de valider|un « ok »|je peux pr[ée]parer|quel cr[ée]neau|lesquelles souhaitez-vous|pr[ée]f[ée]rez-vous)/im;
+const CLOSING = /(\?\s*(—|$|\n)|\?\s*$|je vous propose de valider|un (simple )?« ok »|on lance la commande|je peux pr[ée]parer|quel cr[ée]neau|lesquelles souhaitez-vous|pr[ée]f[ée]rez-vous)/im;
 const COMMITMENT = /(je vous communiquerai|je suivrai|je reviens vers vous|je vous tiens inform|je transmets|je prends en compte|fais le n[ée]cessaire)/i;
 
 export function evaluateReply(reply: string, facts: EvalFacts, expect: TurnExpectation): Evaluation {
