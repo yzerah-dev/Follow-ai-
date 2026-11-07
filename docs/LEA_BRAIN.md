@@ -14,7 +14,7 @@ Priorisation commune : **potentiel** (valeur estimée, log) × **urgence** (date
 stockée dans `opportunities.details.scoring` ; mission dans `details.mission`. Sans valeur chiffrée : « À confirmer », potentiel neutre.
 Garde-fous : anti-doublons (`dedupe_key`), une sollicitation proactive par client tous les `contact_cooldown_days` (7 j),
 pause de `refusal_cooldown_days` (60 j) après un refus, « ne plus solliciter », préférence de canal, consentements, relances bornées.
-En mode **supervisé** (V1), LÉA prépare chaque jour offres, supports, invitations et plans ; rien ne part sans validation humaine.
+En mode **supervisé** (au choix de chaque organisation), LÉA prépare chaque jour offres, supports, invitations et plans ; rien ne part sans validation humaine.
 
 ## Cinq couches
 1. **Perception** — lecture sous RLS des clients, factures et lignes, produits, tarifs, stocks, offres, conversations, campagnes.

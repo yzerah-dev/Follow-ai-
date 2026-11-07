@@ -3,7 +3,7 @@ import { dec } from "@/lib/money";
 export type CommercialPolicy = {
   name: string | null;
   maxAutoDiscountPct: string; // plafond de remise que LÉA peut proposer sans transfert
-  requireDiscountApproval: boolean; // V1 : toute remise communiquée nécessite une validation humaine
+  requireDiscountApproval: boolean; // si vrai : toute remise communiquée nécessite une validation humaine (JONAS : non)
   requireMessageApproval: boolean;
   offerValidityDays: number;
 };

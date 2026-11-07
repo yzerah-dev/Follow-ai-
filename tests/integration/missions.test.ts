@@ -68,7 +68,7 @@ describe("Mission 5 — rendez-vous", () => {
       return;
     }
     const m = (await q<{ body: string; status: string }>(`select body, status from messages where id = $1`, [r.messageId]))[0]!;
-    expect(m.status).toBe("pending_approval"); // V1 : validation humaine
+    expect(m.status).toBe("pending_approval"); // brouillon non autonome : validation humaine
     expect(m.body).toMatch(/rendez-vous|point de 20 minutes/);
     expect(m.body).not.toMatch(/baisse|retard|objectif|chiffre d'affaires/i);
     const task = (await q<{ notes: string }>(`select notes from followup_tasks where idempotency_key = $1`, [`meeting-prep:${opp.id}`]))[0]!;
@@ -100,7 +100,7 @@ describe("Respect des refus, préférences et pression commerciale", () => {
     expect(await q(`select 1 from opportunities where customer_id = $1 and status = 'open'`, [id])).toHaveLength(0);
   });
 
-  it("supervisé (V1) : LÉA prépare chaque jour, rien ne part sans validation", async () => {
+  it("organisation supervisée : LÉA prépare chaque jour, rien ne part sans validation", async () => {
     const r = await withAgent(I.orgB, (db) => runAutopilot(db, I.orgB, NOW));
     expect(r.skipped).toBeUndefined();
     expect(r.offersCreated).toBeGreaterThan(0);

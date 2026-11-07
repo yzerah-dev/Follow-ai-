@@ -11,8 +11,8 @@ _Mise à jour : 2026-11-08 — cerveau commercial : 6 missions permanentes._
 - Accueil : « Les priorités de LÉA aujourd'hui » (potentiel / urgence / probabilité) et résultats par mission (conversion, CA attribuable).
 - Garde-fous : anti-doublons, pression commerciale (1 sollicitation / 7 j), pause après refus (60 j), préférences de canal.
 - Mode supervisé : LÉA prépare désormais chaque jour (offres, supports, invitations, plans) au lieu de s'arrêter à l'analyse.
-- **Point ouvert** : le cahier des charges demande la validation humaine des envois en V1 alors que JONAS est en mode autonome
-  (décision du 2026-11-07) — en attente d'arbitrage client.
+- **Décision client (2026-11-08)** : l'exigence « validation humaine des envois en V1 » est supprimée. JONAS reste en mode
+  **autonome** (remise ≤ 1 % sans validation) ; le mode supervisé reste disponible par organisation dans Paramètres.
 
 ## Discussions multicanales (2026-11-07)
 - **Conversations** : boîte unifiée filtrable (Toutes / Email / WhatsApp / À traiter), fil en bulles, badges (envoyé seul par LÉA,

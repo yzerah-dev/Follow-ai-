@@ -20,3 +20,4 @@
 | D16 | Autonomie de LÉA par règles déterministes, sans approbation « auto-décidée » | L'agent ne décide jamais une approbation (RLS inchangée) : un envoi autorisé ne crée simplement pas de demande ; décision et raison tracées dans `agent_decisions` |
 | D17 | Envoi unique via `dispatchMessage` | Mêmes contrôles (opposition, consentement, connexion) pour humain et agent ; plage horaire et quota pour l'autonome |
 | D18 | Interrupteur via fonction `security definer` réservée aux managers | Un manager peut arrêter LÉA sans pouvoir modifier toute la politique |
+| D19 | Pas de validation humaine obligatoire des envois en V1 (décision client 2026-11-08) | JONAS autonome ; la validation reste un choix par organisation (mode supervisé) et s'applique toujours aux cas sensibles listés dans `autonomy.ts` |

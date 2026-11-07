@@ -19,7 +19,7 @@ Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'ar
    **déterministes** (`features/agent/autonomy.ts`). En mode autonome LÉA envoie seule ce qui respecte la politique ; tout le reste
    (remise au-delà du plafond, concurrence, question ouverte, identité douteuse, contenu suspect, garde-fou, montant > plafond,
    relance au-delà du max) passe par `approvals`. L'agent peut demander une approbation, jamais la décider (RLS) ; il ne peut pas
-   modifier son niveau d'autonomie. Interrupteur `autonomy_paused` (managers). JONAS : autonome, remise ≤ 1 % sans validation (décision du 2026-11-07).
+   modifier son niveau d'autonomie. Interrupteur `autonomy_paused` (managers). JONAS : autonome, remise ≤ 1 % sans validation (décision du 2026-11-07, confirmée le 2026-11-08 : pas de validation humaine obligatoire des envois en V1).
 6. **Envois** : tout envoi passe par `dispatchMessage()` (`features/conversations/dispatch.ts`) : liste d'opposition, consentement,
    connexion utilisable ; envois autonomes limités à la plage horaire et au quota (sinon programmés). Aucun envoi réel sans connecteur
    réel configuré : activer un connecteur réel = activer des envois réels → approbation explicite du client requise.
