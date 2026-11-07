@@ -132,7 +132,7 @@ describe("Style des réponses selon le canal", () => {
 describe("accroche du premier message WhatsApp", () => {
   it("donne une raison d'acheter, issue des faits du système", async () => {
     const { offerHook } = await import("@/features/agent/lea");
-    expect(offerHook({ opportunityType: "reorder", salesFacts: [], usualInOffer: 3, newProductNames: [] })).toMatch(/réassort/);
+    expect(offerHook({ opportunityType: "reorder", salesFacts: [], usualInOffer: 3, newProductNames: [] })).toMatch(/fin de stock/);
     expect(offerHook({ opportunityType: null, salesFacts: ["Stock limité sur « Bougie » : 40 pièces disponibles à ce jour."], usualInOffer: 0, newProductNames: [] })).toMatch(/^Stock limité.+prévenir/);
     expect(offerHook({ opportunityType: "new_product", salesFacts: [], usualInOffer: 0, newProductNames: ["Lampe Lin"] })).toContain("« Lampe Lin »");
     expect(offerHook({ opportunityType: null, salesFacts: [], usualInOffer: 0, newProductNames: [] })).toBe("J'ai sélectionné pour vous des références adaptées à votre magasin.");
