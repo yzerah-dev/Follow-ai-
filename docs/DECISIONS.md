@@ -31,3 +31,8 @@
 | D27 | Couverture de stock estimée à partir des achats (sell-in), hypothèses H1/H2 affichées | Les factures ne mesurent pas les ventes consommateur ; une estimation est toujours étiquetée et remplacée par la donnée déclarée quand elle existe |
 | D28 | Offre révisée = nouvelle offre, l'ancienne « remplacée » | Traçabilité des versions et de l'attribution ; la conversation suit la dernière version ; une acceptation porte sur l'offre révisée |
 | D29 | Révision jamais plus chère sur objection prix, 2 révisions maximum | Ne pas mettre le client en difficulté ni le harceler ; au-delà, le commercial reprend |
+| D30 | Sélection grands catalogues en SQL + logique pure, LLM sur résumé seulement | Pas de catalogue envoyé au modèle ; coût et latence maîtrisés ; résultats reproductibles |
+| D31 | RLS par liste d'organisations calculée une fois par requête (`app.readable_orgs()` en InitPlan) | Même sémantique d'accès ; évite une fonction security definer par ligne (×8 sur 500 000 lignes) |
+| D32 | Éditeur virtualisé maison, sauvegarde automatique avec révision | Pas de dépendance de tableau ; fluide à 1 000 lignes ; le serveur reste maître des prix et des totaux |
+| D33 | Générations lourdes en tâches (`creative_jobs`) exécutées après la réponse (`after()`) et reprises par le cron | Pas d'attente bloquante ; progression visible ; reprise à l'étape près ; remplaçable par une file dédiée (Inngest) |
+| D34 | Suppression de lignes d'offre ouverte aux rôles d'écriture | Exclure des produits fait partie de l'édition commerciale courante ; tracé dans l'historique |

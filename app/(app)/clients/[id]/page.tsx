@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, Mail, Phone, Globe, MapPin } from "lucide-react";
+import { Mail, Phone, Globe, MapPin } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/lib/auth/context";
 import { getCustomer } from "@/features/customers/queries";
@@ -14,7 +14,8 @@ import { KeyValue, LeaMark, Stat } from "@/components/ui/misc";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { ActionButton } from "@/components/app/action-button";
 import { AVAILABILITY, CUSTOMER_STATUS, OFFER_STATUS, OPPORTUNITY_LABEL, PAYMENT_STATUS } from "@/components/app/labels";
-import { createOfferForCustomerAction, createOfferFromOpportunityAction } from "@/app/actions/commercial";
+import { createOfferFromOpportunityAction } from "@/app/actions/commercial";
+import { OfferBuilderForm } from "@/components/app/offer-builder-form";
 import { GrowthSection } from "./growth-section";
 import { CoverageSection } from "./coverage-section";
 import { loadCustomerCoverage } from "@/features/analytics/coverage-repo";
@@ -55,9 +56,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           </p>
         </div>
         {writable ? (
-          <ActionButton action={createOfferForCustomerAction.bind(null, c.id)} pendingLabel="LÉA prépare l'offre…">
-            Préparer une offre <ArrowRight />
-          </ActionButton>
+          <OfferBuilderForm customerId={c.id} />
         ) : null}
       </div>
 

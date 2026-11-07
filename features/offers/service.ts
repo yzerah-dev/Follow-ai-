@@ -68,11 +68,22 @@ export async function createOfferDraft(
     ],
   );
   const offerId = offer.rows[0]!.id;
-  for (const l of draft.lines) {
+  // Lignes insérées par lots (offres de plusieurs centaines de références)
+  for (let k = 0; k < draft.lines.length; k += 500) {
+    const batch = draft.lines.slice(k, k + 500).map((l) => ({
+      line_no: l.lineNo, product_id: l.productId, description: l.description, quantity: l.quantity, unit_price_ht: l.unitPriceHt, price_source: l.priceSource,
+      discount_pct: l.discountPct, vat_rate: l.vatRate, line_total_ht: l.lineTotalHt, rationale: [l.rationale, ...l.notes].filter(Boolean).join(" ") || null,
+      recommendation_type: l.meta.recommendationType ?? null, confidence: l.meta.confidence ?? null, purchase_count: l.meta.purchaseCount ?? null,
+      last_order_date: l.meta.lastOrderDate ?? null, history_qty: l.meta.historyQty ?? null,
+    }));
     await db.query(
-      `insert into offer_lines (organization_id, offer_id, line_no, product_id, description, quantity, unit_price_ht, price_source, discount_pct, vat_rate, line_total_ht, rationale)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [orgId, offerId, l.lineNo, l.productId, l.description, l.quantity, l.unitPriceHt, l.priceSource, l.discountPct, l.vatRate, l.lineTotalHt, [l.rationale, ...l.notes].filter(Boolean).join(" ") || null],
+      `insert into offer_lines (organization_id, offer_id, line_no, product_id, description, quantity, unit_price_ht, price_source, discount_pct, vat_rate, line_total_ht, rationale,
+         recommendation_type, confidence, purchase_count, last_order_date, history_qty)
+       select $1, $2, x.line_no, x.product_id, x.description, x.quantity, x.unit_price_ht, x.price_source, x.discount_pct, x.vat_rate, x.line_total_ht, x.rationale,
+              x.recommendation_type, x.confidence, x.purchase_count, x.last_order_date, x.history_qty
+       from jsonb_to_recordset($3::jsonb) as x(line_no int, product_id uuid, description text, quantity numeric, unit_price_ht numeric, price_source text, discount_pct numeric,
+         vat_rate numeric, line_total_ht numeric, rationale text, recommendation_type text, confidence text, purchase_count int, last_order_date date, history_qty numeric)`,
+      [orgId, offerId, JSON.stringify(batch)],
     );
   }
   if (!autoApprove)

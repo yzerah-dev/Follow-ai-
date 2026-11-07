@@ -94,15 +94,23 @@ async function loadFacts(db: Db, customerId: string | null, offerId: string | nu
   return { offer, customer: { francoAmount: cu?.franco_amount ?? null, minOrderAmount: cu?.min_order_amount ?? null, paymentTerms: cu?.payment_terms ?? null } };
 }
 
-/** Rédige l'email d'accompagnement d'une offre → message en attente de validation. */
-export async function draftOfferEmail(db: Db, orgId: string, offerId: string, actor: Actor, opts: { autonomous?: boolean; now?: Date } = {}) {
+/**
+ * Compose l'email d'accompagnement d'une offre (sans l'enregistrer).
+ * Offres volumineuses : le modèle reçoit un RÉSUMÉ (catégories, 25 lignes prioritaires), jamais le catalogue ni toutes les lignes.
+ */
+export async function composeOfferEmail(db: Db, orgId: string, offerId: string, actor: Actor, opts: { now?: Date } = {}) {
   const llm = getLlm();
   const offer = (await db.query<{ id: string; number: string; customer_id: string; valid_until: string | null; total_ht: string; customer_name: string; discount_total_ht: string }>(
     `select o.id, o.number, o.customer_id, o.valid_until, o.total_ht, o.discount_total_ht, coalesce(c.trade_name, c.legal_name) as customer_name
      from offers o join customers c on c.id = o.customer_id where o.id = $1 and o.organization_id = $2`, [offerId, orgId])).rows[0];
   if (!offer) throw new Error("Offre introuvable.");
-  const lines = (await db.query<{ reference: string; description: string; quantity: string; product_id: string; is_new: boolean; discount_pct: string }>(
-    `select p.reference, l.description, l.quantity, l.product_id, p.is_new, l.discount_pct from offer_lines l join products p on p.id = l.product_id where l.offer_id = $1 order by l.line_no`, [offerId])).rows;
+  const lines = (await db.query<{ reference: string; description: string; quantity: string; product_id: string; is_new: boolean; discount_pct: string; category: string | null; line_total_ht: string }>(
+    `select p.reference, l.description, l.quantity, l.product_id, p.is_new, l.discount_pct, p.category, l.line_total_ht
+     from offer_lines l join products p on p.id = l.product_id where l.offer_id = $1 order by l.line_no`, [offerId])).rows;
+  const catMap = new Map<string, { lines: number; total: number }>();
+  for (const l of lines) { const k = l.category ?? "Autres"; const v = catMap.get(k) ?? { lines: 0, total: 0 }; catMap.set(k, { lines: v.lines + 1, total: v.total + Number(l.line_total_ht) }); }
+  const categories = [...catMap.entries()].sort((x, y) => y[1].total - x[1].total).slice(0, 8).map(([name, v]) => ({ name, lines: v.lines }));
+  const focus = lines.length > 25 ? [...lines].sort((x, y) => Number(y.line_total_ht) - Number(x.line_total_ht)).slice(0, 25) : lines;
   const history = (await db.query<{ n: number }>(`select count(*)::int as n from invoices where customer_id = $1 and doc_type = 'invoice' and status = 'issued'`, [offer.customer_id])).rows[0]!.n;
   const usual = (await db.query<{ reference: string }>(
     `select p.reference from invoice_lines l join invoices i on i.id = l.invoice_id join products p on p.id = l.product_id
@@ -117,9 +125,9 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
     salesFacts,
     customerName: offer.customer_name,
     contact: contact?.ctx ?? null,
-    offer: { number: offer.number, validUntil: offer.valid_until, totalHt: offer.total_ht, lines: lines.map((l) => ({ reference: l.reference, description: l.description, quantity: l.quantity })) },
+    offer: { number: offer.number, validUntil: offer.valid_until, totalHt: offer.total_ht, lineCount: lines.length, categories, lines: focus.map((l) => ({ reference: l.reference, description: l.description, quantity: l.quantity })) },
     history: { invoiceCount: history, usualReferences: usual },
-    newProductNames: lines.filter((l) => l.is_new && !usual.includes(l.reference)).map((l) => l.description).slice(0, 3),
+    newProductNames: lines.filter((l) => l.is_new && !usual.includes(l.reference)).map((l) => l.description).slice(0, 12),
     ...sender,
   };
   const input = `Rédige l'email d'accompagnement de l'offre ci-dessous. Objectif : obtenir la commande ou un rendez-vous.
@@ -135,6 +143,12 @@ ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
     guardNotes.push(...guard.reasons);
     draft = mockOfferEmail(context);
   }
+  return { offer, contact, sender, draft, guardNotes, res, llm, maxLineDiscount, history };
+}
+
+/** Rédige l'email d'accompagnement d'une offre → message (envoyé seul ou en attente de validation selon l'autonomie). */
+export async function draftOfferEmail(db: Db, orgId: string, offerId: string, actor: Actor, opts: { autonomous?: boolean; now?: Date } = {}) {
+  const { offer, contact, sender, draft, guardNotes, res, llm, maxLineDiscount, history } = await composeOfferEmail(db, orgId, offerId, actor, opts);
   const runId = await recordRun(db, orgId, "message_draft", actor, llm, { offerId, task: "draft_offer_email" }, { draft, guardNotes }, res.usage);
 
   // Canal : email (offre complète + pièces jointes) ou WhatsApp (modèle approuvé + PDF) si c'est le seul canal autorisé.

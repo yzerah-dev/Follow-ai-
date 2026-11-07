@@ -20,14 +20,18 @@ export async function listCustomers(db: Db, orgId: string, opts: { q?: string; s
   const total = (await db.query<{ n: number }>(`select count(*)::int as n from customers c where ${where}`, params)).rows[0]!.n;
   params.push(PAGE_SIZE, (page - 1) * PAGE_SIZE);
   const rows = (await db.query<{ id: string; external_code: string | null; name: string; city: string | null; segment: string | null; status: string; revenue_12m: string | null; last_purchase: string | null; open_opps: number; owner: string | null }>(
-    `select c.id, c.external_code, coalesce(c.trade_name, c.legal_name) as name, c.city, c.segment, c.status,
-            (select sum(case when i.doc_type = 'credit_note' then -i.total_ht else i.total_ht end) from invoices i
-               where i.customer_id = c.id and i.status = 'issued' and i.invoice_date > current_date - 365) as revenue_12m,
-            (select max(i.invoice_date) from invoices i where i.customer_id = c.id and i.status = 'issued' and i.doc_type = 'invoice') as last_purchase,
-            (select count(*)::int from opportunities o where o.customer_id = c.id and o.status = 'open') as open_opps,
-            m.display_name as owner
-     from customers c left join organization_members m on m.organization_id = c.organization_id and m.user_id = c.owner_user_id
-     where ${where} order by revenue_12m desc nulls last, name limit $${params.length - 1} offset $${params.length}`, params)).rows;
+    // Agrégats calculés une fois pour l'organisation (pas une sous-requête par client) : rapide à 5 000 clients.
+    `with inv as (
+       select customer_id,
+              sum(case when doc_type = 'credit_note' then -total_ht else total_ht end) filter (where invoice_date > current_date - 365) as revenue_12m,
+              max(invoice_date) filter (where doc_type = 'invoice') as last_purchase
+       from invoices where organization_id = $1 and status = 'issued' group by customer_id),
+     opp as (select customer_id, count(*)::int as n from opportunities where organization_id = $1 and status = 'open' group by customer_id)
+     select c.id, c.external_code, coalesce(c.trade_name, c.legal_name) as name, c.city, c.segment, c.status,
+            inv.revenue_12m, inv.last_purchase, coalesce(opp.n, 0) as open_opps, m.display_name as owner
+     from customers c left join inv on inv.customer_id = c.id left join opp on opp.customer_id = c.id
+     left join organization_members m on m.organization_id = c.organization_id and m.user_id = c.owner_user_id
+     where ${where} order by inv.revenue_12m desc nulls last, name limit $${params.length - 1} offset $${params.length}`, params)).rows;
   return { rows, total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 

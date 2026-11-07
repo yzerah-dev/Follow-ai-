@@ -67,6 +67,39 @@ export type EngineInput = {
   targetAlertPct?: number;
   /** Refus, pause ou opposition : aucune sollicitation proactive. */
   blockedReason?: string | null;
+  /** Index du catalogue partagé entre tous les clients d'une analyse (évite de reparcourir 20 000 produits par client). */
+  index?: CatalogIndex;
+  limits?: Partial<EngineLimits>;
+};
+
+/** Plafonds de sélection : dimensionnés pour les grands catalogues (aucune limite arbitraire à 5 ou 10 produits). */
+export type EngineLimits = { newProducts: number; crossSell: number; crossSeeds: number; dormantTop: number };
+export const DEFAULT_LIMITS: EngineLimits = { newProducts: 40, crossSell: 30, crossSeeds: 60, dormantTop: 50 };
+
+export type CatalogIndex = {
+  productById: Map<string, EngineProduct>;
+  pricesByProduct: Map<string, PriceRow[]>;
+  newProducts: EngineProduct[]; // actifs, marqués nouveaux, non en rupture
+};
+
+export function buildCatalogIndex(products: EngineProduct[], prices: PriceRow[]): CatalogIndex {
+  const pricesByProduct = new Map<string, PriceRow[]>();
+  for (const p of prices) {
+    const l = pricesByProduct.get(p.productId);
+    if (l) l.push(p);
+    else pricesByProduct.set(p.productId, [p]);
+  }
+  return {
+    productById: new Map(products.map((p) => [p.id, p])),
+    pricesByProduct,
+    newProducts: products.filter((p) => p.status === "active" && p.isNew && p.category && p.availability !== "out_of_stock"),
+  };
+}
+
+/** Liste de références lisible même pour 200 produits : les 8 premières puis « et N autres ». */
+const refList = (refs: (string | undefined)[]) => {
+  const r = refs.filter(Boolean) as string[];
+  return r.length <= 8 ? r.join(", ") : `${r.slice(0, 8).join(", ")} et ${r.length - 8} autre(s)`;
 };
 
 const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x));
@@ -93,17 +126,19 @@ export function priorityScore(value: string | null, confidence: number, urgencyD
 }
 
 export function detectOpportunities(input: EngineInput): OpportunityCandidate[] {
-  const { today, customer, products, prices, settings } = input;
+  const { today, customer, settings } = input;
   const out: OpportunityCandidate[] = [];
   if (customer.status === "blocked" || customer.status === "lost" || input.blockedReason) return out;
-  const productById = new Map(products.map((p) => [p.id, p]));
+  const index = input.index ?? buildCatalogIndex(input.products, input.prices);
+  const limits = { ...DEFAULT_LIMITS, ...input.limits };
+  const productById = index.productById;
   const summary = customerSummary(input.invoices, today);
   const habits = productHabits(input.invoices, input.lines, today);
   const sources = (n: number) => [`${n} facture(s) analysée(s)`, "lignes de factures", "tarifs"];
   const priceOf = (productId: string, qty: string) => {
     const p = productById.get(productId);
     if (!p) return null;
-    return resolvePrice({ id: p.id, salePriceHt: p.salePriceHt }, customer.id, prices, today, Number(qty));
+    return resolvePrice({ id: p.id, salePriceHt: p.salePriceHt }, customer.id, index.pricesByProduct.get(p.id) ?? [], today, Number(qty));
   };
   const expires = (days: number) => addDays(today, days).toISOString();
 
@@ -142,7 +177,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
         title: `Réassort probable de ${due.length} référence${due.length > 1 ? "s" : ""}`,
         justification:
           `${customer.name} commande ces références en moyenne tous les ${Math.round(due.reduce((a, h) => a + (h.meanIntervalDays ?? 0), 0) / due.length)} jours ` +
-          `(${due.map((h) => productById.get(h.productId)?.reference).join(", ")}). ` +
+          `(${refList(due.map((h) => productById.get(h.productId)?.reference))}). ` +
           (minDays < 0 ? `La prochaine commande attendue a ${-minDays} jour(s) de retard.` : `Prochaine commande attendue d'ici ${minDays} jour(s).`) +
           (estimated ? ` Potentiel estimé sur la base des quantités habituelles : ${fmtEur(estimated)} HT.` : " Aucun prix connu : potentiel non estimé."),
         confidence,
@@ -173,7 +208,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
     if (summary.daysSinceLast > threshold) {
       const estimated = summary.avgBasket;
       const confidence = Number(clamp(0.3 + 0.05 * Math.min(summary.invoiceCount, 8), 0, 0.75).toFixed(3));
-      const top = habits.slice(0, 5).map((h) => h.productId);
+      const top = habits.slice(0, limits.dormantTop).map((h) => h.productId);
       out.push({
         customerId: customer.id,
         type: "dormant_customer",
@@ -209,18 +244,16 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
     [...catRevenue.entries()].filter(([, v]) => totalRev.gt(0) && v.dividedBy(totalRev).gte(0.25)).map(([c]) => c),
   );
   const cutoffNew = toIsoDate(addDays(today, -120));
-  const news = products.filter(
-    (p) => p.status === "active" && p.isNew && p.category && strongCats.has(p.category) && !boughtIds.has(p.id) && (!p.launchedAt || p.launchedAt >= cutoffNew) && p.availability !== "out_of_stock",
-  );
+  const news = index.newProducts.filter((p) => strongCats.has(p.category!) && !boughtIds.has(p.id) && (!p.launchedAt || p.launchedAt >= cutoffNew));
   if (news.length && !isDormant) {
-    const pick = news.slice(0, 4);
+    const pick = news.slice(0, limits.newProducts);
     const ids = pick.map((p) => p.id).sort();
     out.push({
       customerId: customer.id,
       type: "new_product",
       productIds: ids,
       title: `${pick.length} nouveauté${pick.length > 1 ? "s" : ""} dans ses catégories`,
-      justification: `Le client réalise une part significative de ses achats en ${[...strongCats].join(", ")}. Nouveautés non encore achetées : ${pick.map((p) => p.reference).join(", ")}.`,
+      justification: `Le client réalise une part significative de ses achats en ${[...strongCats].join(", ")}. Nouveautés non encore achetées : ${refList(pick.map((p) => p.reference))}.`,
       confidence: 0.45,
       estimatedValueHt: null,
       priority: priorityScore(null, 0.45, 20),
@@ -236,13 +269,13 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
   // 4. Vente complémentaire — produits souvent achetés avec ceux du client (lift > 1.5)
   if (input.coPurchase && !isDormant) {
     const scores = new Map<string, number>();
-    for (const h of habits.slice(0, 15)) {
+    for (const h of habits.slice(0, limits.crossSeeds)) {
       for (const a of input.coPurchase.get(h.productId) ?? []) {
         if (boughtIds.has(a.productId) || a.lift < 2 || a.support < 4 || a.confidence < 0.25 || productById.get(a.productId)?.status !== "active") continue;
         scores.set(a.productId, Math.max(scores.get(a.productId) ?? 0, a.lift * a.confidence));
       }
     }
-    const best = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const best = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, limits.crossSell);
     if (best.length) {
       const ids = best.map(([id]) => id).sort();
       const confidence = Number(clamp(0.25 + Math.min(0.35, best[0]![1] / 20), 0, 0.6).toFixed(3));
@@ -251,7 +284,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
         type: "cross_sell",
         productIds: ids,
         title: `Vente complémentaire : ${ids.length} référence${ids.length > 1 ? "s" : ""}`,
-        justification: `Ces références sont fréquemment achetées par d'autres clients avec les produits habituels de ${customer.name} : ${ids.map((id) => productById.get(id)?.reference).join(", ")}.`,
+        justification: `Ces références sont fréquemment achetées par d'autres clients avec les produits habituels de ${customer.name} : ${refList(ids.map((id) => productById.get(id)?.reference))}.`,
         confidence,
         estimatedValueHt: null,
         priority: priorityScore(null, confidence, 25),
@@ -291,7 +324,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
         type: "back_in_stock",
         productIds: ids,
         title: `De retour en stock : ${ids.length} référence${ids.length > 1 ? "s" : ""} habituelle${ids.length > 1 ? "s" : ""}`,
-        justification: `${ids.map((id) => productById.get(id)?.reference).join(", ")} ${ids.length > 1 ? "sont" : "est"} de nouveau disponible${ids.length > 1 ? "s" : ""} et fai${ids.length > 1 ? "saient" : "sait"} partie des achats réguliers de ${customer.name}.` +
+        justification: `${refList(ids.map((id) => productById.get(id)?.reference))} ${ids.length > 1 ? "sont" : "est"} de nouveau disponible${ids.length > 1 ? "s" : ""} et fai${ids.length > 1 ? "saient" : "sait"} partie des achats réguliers de ${customer.name}.` +
           (estimated ? ` Potentiel estimé sur les quantités habituelles : ${fmtEur(estimated)} HT.` : " Prix non connu : potentiel à confirmer."),
         confidence: 0.6,
         estimatedValueHt: estimated,
@@ -370,7 +403,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
     out.push({
       customerId: customer.id,
       type: "appointment",
-      productIds: news.slice(0, 4).map((p) => p.id).sort(),
+      productIds: news.slice(0, limits.newProducts).map((p) => p.id).sort(),
       title: strongDecline ? `CA en baisse de ${Math.abs(summary.trendPct!).toLocaleString("fr-FR")} % — rendez-vous conseillé` : `Client non rencontré ${daysSinceMeeting === null ? "à ce jour" : `depuis ${daysSinceMeeting} jours`} — rendez-vous conseillé`,
       justification: argument.join(" "),
       confidence: strongDecline ? 0.5 : 0.45,

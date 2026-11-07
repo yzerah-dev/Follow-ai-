@@ -1,6 +1,21 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-08 — formation commerciale V2 : persuasion par la donnée._
+_Mise à jour : 2026-11-08 — grands catalogues V3 (mesures : docs/PERFORMANCE.md)._
+
+## Grands catalogues V3 (2026-11-08)
+- Moteur de sélection (`features/selection/pipeline.ts`) : index produits, historique, fréquences, réassorts, permanents, retours en stock,
+  compléments (co-achats SQL), nouveautés, vérification tarifs/disponibilités, classement, offre complète sans doublon (1 à 1 000 lignes),
+  budget et catégories ; références à ne pas recommander listées avec motif. Le LLM ne reçoit qu'un résumé (catégories, 25 lignes).
+- Plafonds du moteur d'opportunités relevés (40 nouveautés, 30 compléments, 50 références client inactif) ; index catalogue partagé,
+  écritures par lots : analyse de l'organisation entière 51 s → 11,6 s sur 500 000 lignes.
+- RLS : politiques réécrites (liste des organisations calculée une fois par requête) — accueil 8,2 s → 0,95 s, clients 9 s → 72 ms.
+- Éditeur d'offre (`components/app/offer-editor.tsx`, `features/offers/editor.ts`) : virtualisation, recherche, filtres, tri, sélection
+  multiple, modification en masse, exclusion, ajout de produit, doublons refusés, prix/colisage/remises recalculés serveur, sauvegarde
+  automatique, révision (concurrence optimiste), historique (`offer_line_changes`), offre validée modifiée → nouvelle validation.
+- Studio : Excel illustré enrichi (14 colonnes demandées), catalogue PDF, synthèse commerciale, sélection prioritaire, email personnalisé ;
+  générations asynchrones (`creative_jobs` : progression, reprise sur erreur, reprise par le cron), images dédupliquées.
+- Banc de charge : `npm run perf:seed` (20 000 produits, 5 000 clients, 499 500 lignes) puis `npm run perf` (budgets, rapport généré).
+
 
 ## Formation commerciale V2 (2026-11-08)
 - Moteur de couverture de stock (`features/analytics/coverage.ts`) : ventes/jour, stock, couverture, risque de rupture, quantité
@@ -105,10 +120,11 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 85/85 |
-| `npm run test:integration` (PostgreSQL 16) | ✅ 52/52 (scénario supervisé, 9 autonomie, 10 discussions, 10 missions dont accueil, 19 RLS, 3 imports) |
+| `npm run test` | ✅ 103/103 |
+| `npm run test:integration` (PostgreSQL 16) | ✅ 66/66 (dont négociation, grands catalogues, 20 RLS) |
+| `npm run perf` (20 000 produits, 500 000 lignes) | ✅ 27/27 budgets respectés — voir docs/PERFORMANCE.md |
 | `npm run build` | ✅ |
-| `npm run e2e` (Playwright, Chromium) | ✅ 5/5 (dont mode autonome et discussion WhatsApp via l'interface) |
+| `npm run e2e` (Playwright, Chromium) | ✅ 6/6 (dont grand catalogue : éditeur, sauvegarde automatique, génération asynchrone) |
 
 ## Problèmes connus
 - Rate limit en mémoire (par instance).

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { db } from "@/lib/auth/context";
-import { listOpportunities } from "@/features/dashboard/queries";
+import { listOpportunities, countOpportunities } from "@/features/dashboard/queries";
+import { Pagination, pageParam } from "@/components/app/list-controls";
 import { MISSIONS, MISSION_LABEL, type Mission } from "@/features/opportunities/missions";
 import { canWrite } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
@@ -11,10 +12,17 @@ import { runScanAction } from "@/app/actions/commercial";
 
 export const metadata = { title: "Opportunités" };
 
-export default async function OpportunitiesPage({ searchParams }: { searchParams: Promise<{ mission?: string }> }) {
+const SIZE = 50;
+
+export default async function OpportunitiesPage({ searchParams }: { searchParams: Promise<{ mission?: string; page?: string }> }) {
   const sp = await searchParams;
   const mission = (MISSIONS as readonly string[]).includes(sp.mission ?? "") ? (sp.mission as Mission) : undefined;
-  const { opps, ctx } = await db(async (d, ctx) => ({ opps: await listOpportunities(d, ctx.org.organizationId, { mission }), ctx }));
+  const page = pageParam(sp.page);
+  const { opps, total, ctx } = await db(async (d, ctx) => ({
+    opps: await listOpportunities(d, ctx.org.organizationId, { mission, limit: SIZE, offset: (page - 1) * SIZE }),
+    total: await countOpportunities(d, ctx.org.organizationId, { mission }),
+    ctx,
+  }));
   const writable = canWrite(ctx.org.role);
 
   return (
@@ -23,7 +31,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         <div>
           <h1 className="text-[26px] font-bold tracking-tight">Opportunités</h1>
           <p className="mt-1 text-sm text-subtle">
-            {opps.length} opportunité{opps.length > 1 ? "s" : ""} {mission ? `· ${MISSION_LABEL[mission]}` : "ouverte(s)"} — classées par potentiel × urgence × probabilité.
+            {total} opportunité{total > 1 ? "s" : ""} {mission ? `· ${MISSION_LABEL[mission]}` : "ouverte(s)"} — classées par potentiel × urgence × probabilité.
           </p>
         </div>
         {writable ? (
@@ -57,6 +65,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           </div>
         ))}
       </div>
+      <Pagination page={page} pages={Math.max(1, Math.ceil(total / SIZE))} total={total} base="/opportunites" params={{ mission }} />
     </div>
   );
 }

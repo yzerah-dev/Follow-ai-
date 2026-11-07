@@ -19,7 +19,7 @@ export type DashboardOpportunity = {
 };
 
 /** Opportunités ouvertes ou en cours, triées par priorité ; filtre optionnel par mission. */
-export async function listOpportunities(db: Db, orgId: string, opts: { mission?: Mission; limit?: number } = {}): Promise<DashboardOpportunity[]> {
+export async function listOpportunities(db: Db, orgId: string, opts: { mission?: Mission; limit?: number; offset?: number } = {}): Promise<DashboardOpportunity[]> {
   const params: unknown[] = [orgId, opts.limit ?? 200];
   let filter = "";
   if (opts.mission) {
@@ -31,12 +31,23 @@ export async function listOpportunities(db: Db, orgId: string, opts: { mission?:
             o.estimated_value_ht, o.priority, o.recommended_action, o.offer_id, o.status, o.details->>'mission' as mission, o.details->'scoring' as scoring
      from opportunities o join customers c on c.id = o.customer_id
      where o.organization_id = $1 and o.status in ('open', 'in_progress') ${filter}
-     order by (o.status = 'open') desc, o.priority desc, o.estimated_value_ht desc nulls last limit $2`, params)).rows;
+     order by (o.status = 'open') desc, o.priority desc, o.estimated_value_ht desc nulls last, o.id limit $2 offset ${Number(opts.offset ?? 0)}`, params)).rows;
   return rows.map((o) => ({
     id: o.id, customerId: o.customer_id, customerName: o.customer_name, type: o.type, title: o.title, justification: o.justification,
     confidence: o.confidence, estimatedValueHt: o.estimated_value_ht, priority: o.priority, recommendedAction: o.recommended_action, offerId: o.offer_id, status: o.status,
     mission: o.mission ?? MISSION_OF[o.type] ?? null, scoring: o.scoring,
   }));
+}
+
+/** Nombre d'opportunités ouvertes ou en cours (pagination). */
+export async function countOpportunities(db: Db, orgId: string, opts: { mission?: Mission } = {}) {
+  const params: unknown[] = [orgId];
+  let filter = "";
+  if (opts.mission) {
+    params.push(opts.mission, OPPORTUNITY_TYPES_OF[opts.mission] ?? []);
+    filter = `and (details->>'mission' = $2 or (details->>'mission' is null and type::text = any($3::text[])))`;
+  }
+  return (await db.query<{ n: number }>(`select count(*)::int as n from opportunities where organization_id = $1 and status in ('open','in_progress') ${filter}`, params)).rows[0]!.n;
 }
 
 /** Toutes les valeurs proviennent de la base : aucune métrique fictive. */

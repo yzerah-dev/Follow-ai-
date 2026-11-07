@@ -1,7 +1,7 @@
 import type { Db } from "@/lib/database/client";
 import { coPurchase, type InvoiceLite, type LineLite } from "@/features/invoices/analytics";
 import type { PriceRow } from "@/features/offers/pricing";
-import { detectOpportunities, type EngineProduct, type OpportunityCandidate } from "./engine";
+import { buildCatalogIndex, detectOpportunities, type EngineProduct, type OpportunityCandidate } from "./engine";
 import { currentPeriods, type TargetInput } from "@/features/customers/targets";
 
 export type ScanResult = { created: number; updated: number; expired: number; candidates: number; runId: string };
@@ -21,6 +21,8 @@ const RECOMPUTED_TYPES = ["reorder", "dormant_customer", "new_product", "cross_s
  * justifiées par les données sont expirées (historique conservé).
  */
 export async function runOpportunityScan(db: Db, organizationId: string, today: string, triggeredBy: string | null = null): Promise<ScanResult> {
+  const t0 = Date.now();
+  const trace = (label: string) => { if (process.env.PERF_TRACE) console.log(`[scan] ${label.padEnd(28)} ${((Date.now() - t0) / 1000).toFixed(1)} s`); };
   const run = await db.query<{ id: string }>(
     `insert into agent_runs (organization_id, kind, status, input, provider, triggered_by, started_at)
      values ($1, 'opportunity_scan', 'running', $2, 'deterministic', $3, now()) returning id`,
@@ -95,6 +97,7 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
       ),
     ]);
 
+    trace("données chargées");
     const engineProducts: EngineProduct[] = products.rows.map((p) => ({
       id: p.id,
       reference: p.reference,
@@ -117,6 +120,7 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
     const effectiveIds = new Set(invoices.rows.filter((i) => i.status !== "cancelled" && i.doc_type === "invoice").map((i) => i.id));
     const assoc = coPurchase(lines.rows.filter((l) => effectiveIds.has(l.invoice_id)).map((l) => ({ invoiceId: l.invoice_id, productId: l.product_id })));
 
+    trace("co-achats calculés");
     const invByCustomer = new Map<string, InvoiceLite[]>();
     for (const i of invoices.rows) {
       const list = invByCustomer.get(i.customer_id) ?? [];
@@ -129,6 +133,9 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
       list.push({ invoiceId: l.invoice_id, productId: l.product_id, quantity: l.quantity, unitPriceHt: l.unit_price_ht, lineTotalHt: l.line_total_ht });
       linesByCustomer.set(l.customer_id, list);
     }
+    const index = buildCatalogIndex(engineProducts, priceRows);
+    const offersByCustomer = new Map<string, typeof offers.rows>();
+    for (const o of offers.rows) offersByCustomer.set(o.customer_id, [...(offersByCustomer.get(o.customer_id) ?? []), o]);
     const campaignList = campaigns.rows.map((c) => ({ id: c.id, name: c.name, endsOn: c.ends_on, productIds: c.product_ids }));
 
     const candidates: OpportunityCandidate[] = [];
@@ -141,10 +148,11 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
           lines: linesByCustomer.get(c.id) ?? [],
           products: engineProducts,
           prices: priceRows,
+          index,
           settings: { dormantAfterDays: settings.dormant_after_days, reorderLookaheadDays: settings.reorder_lookahead_days },
           coPurchase: assoc,
           activeCampaigns: campaignList,
-          openOffers: offers.rows.filter((o) => o.customer_id === c.id).map((o) => ({ id: o.id, number: o.number, status: o.status, sentAt: o.sent_at, totalHt: o.total_ht })),
+          openOffers: (offersByCustomer.get(c.id) ?? []).map((o) => ({ id: o.id, number: o.number, status: o.status, sentAt: o.sent_at, totalHt: o.total_ht })),
           restocks,
           lastMeetingAt: meetings.get(c.id) ?? null,
           meetingIntervalDays: settings.meeting_interval_days,
@@ -155,29 +163,38 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
       );
     }
 
+    trace(`détection (${candidates.length})`);
     let created = 0;
     let updated = 0;
     const keys: string[] = [];
-    for (const o of candidates) {
-      keys.push(o.dedupeKey);
+    // Écriture par lots (500 opportunités par requête) : quelques dizaines d'allers-retours au lieu de milliers.
+    // Une seule opportunité par clé de dédoublonnage (une requête ne peut pas mettre à jour deux fois la même ligne).
+    const unique = [...new Map(candidates.map((o) => [o.dedupeKey, o])).values()];
+    for (const o of unique) keys.push(o.dedupeKey);
+    for (let k = 0; k < unique.length; k += 500) {
+      const batch = unique.slice(k, k + 500).map((o) => ({
+        customer_id: o.customerId, type: o.type, product_ids: o.productIds, title: o.title, justification: o.justification, confidence: o.confidence,
+        estimated_value_ht: o.estimatedValueHt, priority: o.priority, recommended_action: o.recommendedAction, suggested_date: o.suggestedDate,
+        data_sources: o.dataSources, details: o.details, dedupe_key: o.dedupeKey, expires_at: o.expiresAt,
+      }));
       const r = await db.query<{ inserted: boolean }>(
         `insert into opportunities (organization_id, customer_id, type, product_ids, title, justification, confidence,
            estimated_value_ht, priority, recommended_action, suggested_date, data_sources, details, dedupe_key, expires_at, run_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         select $1, x.customer_id, x.type::opportunity_type, x.product_ids, x.title, x.justification, x.confidence, x.estimated_value_ht, x.priority,
+                x.recommended_action, x.suggested_date, x.data_sources, x.details, x.dedupe_key, x.expires_at, $3
+         from jsonb_to_recordset($2::jsonb) as x(customer_id uuid, type text, product_ids uuid[], title text, justification text, confidence numeric,
+           estimated_value_ht numeric, priority int, recommended_action text, suggested_date date, data_sources jsonb, details jsonb, dedupe_key text, expires_at timestamptz)
          on conflict (organization_id, dedupe_key) where status in ('open','in_progress')
          do update set title = excluded.title, justification = excluded.justification, confidence = excluded.confidence,
            estimated_value_ht = excluded.estimated_value_ht, priority = excluded.priority, details = excluded.details,
            suggested_date = excluded.suggested_date, expires_at = excluded.expires_at, run_id = excluded.run_id, computed_at = now()
          returning (xmax = 0) as inserted`,
-        [
-          organizationId, o.customerId, o.type, o.productIds, o.title, o.justification, o.confidence, o.estimatedValueHt,
-          o.priority, o.recommendedAction, o.suggestedDate, JSON.stringify(o.dataSources), o.details, o.dedupeKey, o.expiresAt, runId,
-        ],
+        [organizationId, JSON.stringify(batch), runId],
       );
-      if (r.rows[0]?.inserted) created++;
-      else updated++;
+      for (const row of r.rows) if (row.inserted) created++; else updated++;
     }
 
+    trace("écriture des opportunités");
     // Expiration : délai dépassé, ou plus justifiée par les données (uniquement les "open", pas celles en cours de traitement)
     const exp = await db.query(
       `update opportunities set status = 'expired'

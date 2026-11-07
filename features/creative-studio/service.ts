@@ -8,17 +8,20 @@ import { parseTemplate, type TemplateKind } from "./templates";
 import { loadCustomerCoverage } from "@/features/analytics/coverage-repo";
 import { CONFIDENCE_LABEL } from "@/features/analytics/coverage";
 import { toIsoDate } from "@/lib/utils";
+import { dec } from "@/lib/money";
 import {
-  generateCatalog, generateCoverageExcel, generateOfferExcel, generateOfferPdf, generateProductSheet, generateRetailPoster,
+  generateCatalog, generateCoverageExcel, generateOfferExcel, generateSynthesisPdf, generateOfferPdf, generateProductSheet, generateRetailPoster,
   validateBrandConsistency, validateOfferDocument, type DocImage, type OfferDocData, type ProductDocData, type ValidationReport,
 } from "./generators";
 
-export const ASSET_KINDS = ["offer_pdf", "offer_excel", "coverage_excel", "product_sheet", "catalog", "poster", "lifestyle_shooting"] as const;
+export const ASSET_KINDS = ["offer_pdf", "offer_excel", "coverage_excel", "synthesis_pdf", "priority_pdf", "product_sheet", "catalog", "poster", "lifestyle_shooting"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 export const ASSET_LABEL: Record<AssetKind, string> = {
   offer_pdf: "Offre PDF",
   offer_excel: "Offre Excel illustrée",
   coverage_excel: "Analyse de couverture (Excel)",
+  synthesis_pdf: "Synthèse commerciale (PDF)",
+  priority_pdf: "Sélection prioritaire (PDF)",
   product_sheet: "Fiches produits",
   catalog: "Catalogue",
   poster: "Affiche",
@@ -42,16 +45,21 @@ async function loadBrand(db: Db, orgId: string, kind: TemplateKind) {
   return { brand, template: def, templateId: tpl?.id ?? null, templateVersion: tpl?.version ?? null };
 }
 
-async function productImage(db: Db, productId: string): Promise<DocImage> {
-  const img = (await db.query<{ storage_path: string; kind: string }>(
-    `select storage_path, kind from product_images where product_id = $1 and approved and kind in ('source','packaging','demo_placeholder') order by is_primary desc limit 1`, [productId])).rows[0];
-  if (!img) return null;
-  try {
-    return { data: await getFile(img.storage_path), mime: "image/png", isDemo: img.kind === "demo_placeholder" };
-  } catch {
-    return null;
+/** Médias produits autorisés (approuvés) d'un lot de produits : une requête, chaque fichier lu une seule fois. */
+async function productImages(db: Db, productIds: string[]): Promise<Map<string, DocImage>> {
+  const rows = (await db.query<{ product_id: string; storage_path: string; kind: string }>(
+    `select distinct on (product_id) product_id, storage_path, kind from product_images
+     where product_id = any($1::uuid[]) and approved and kind in ('source','packaging','demo_placeholder') order by product_id, is_primary desc, created_at`, [productIds])).rows;
+  const files = new Map<string, Buffer | null>();
+  const out = new Map<string, DocImage>();
+  for (const r of rows) {
+    if (!files.has(r.storage_path)) files.set(r.storage_path, await getFile(r.storage_path).catch(() => null));
+    const data = files.get(r.storage_path);
+    out.set(r.product_id, data ? { data, mime: "image/png", isDemo: r.kind === "demo_placeholder" } : null);
   }
+  return out;
 }
+
 
 async function loadOfferDoc(db: Db, orgId: string, offerId: string): Promise<{ doc: OfferDocData; productIds: string[]; master: Map<string, { ean: string | null; name: string }> }> {
   const o = (await db.query<{ number: string; offer_date: string; valid_until: string | null; customer_name: string; external_code: string | null; address_line1: string | null; postal_code: string | null; city: string | null;
@@ -63,8 +71,10 @@ async function loadOfferDoc(db: Db, orgId: string, offerId: string): Promise<{ d
      left join organization_members m on m.organization_id = o.organization_id and m.user_id = o.owner_user_id
      where o.id = $1 and o.organization_id = $2`, [offerId, orgId])).rows[0];
   if (!o) throw new Error("Offre introuvable.");
-  const lines = (await db.query<{ product_id: string; reference: string; ean: string | null; name: string; description: string; quantity: string; unit_price_ht: string; discount_pct: string; vat_rate: string; line_total_ht: string; units_per_case: number | null }>(
-    `select l.product_id, p.reference, p.ean, p.name, l.description, l.quantity, l.unit_price_ht, l.discount_pct, l.vat_rate, l.line_total_ht, p.units_per_case
+  const lines = (await db.query<{ product_id: string; reference: string; ean: string | null; name: string; description: string; quantity: string; unit_price_ht: string; discount_pct: string; vat_rate: string; line_total_ht: string; units_per_case: number | null;
+    category: string | null; recommendation_type: string | null; purchase_count: number | null; last_order_date: string | null; availability: string; confidence: string | null; rationale: string | null }>(
+    `select l.product_id, p.reference, p.ean, p.name, l.description, l.quantity, l.unit_price_ht, l.discount_pct, l.vat_rate, l.line_total_ht, p.units_per_case,
+            p.category, l.recommendation_type, l.purchase_count, l.last_order_date::text, p.availability::text, l.confidence, l.rationale
      from offer_lines l join products p on p.id = l.product_id where l.offer_id = $1 order by l.line_no`, [offerId])).rows;
   const doc: OfferDocData = {
     number: o.number,
@@ -76,13 +86,14 @@ async function loadOfferDoc(db: Db, orgId: string, offerId: string): Promise<{ d
     lines: await Promise.all(lines.map(async (l) => ({
       reference: l.reference, ean: l.ean, description: l.description, quantity: l.quantity, unitPriceHt: l.unit_price_ht, discountPct: l.discount_pct,
       vatRate: l.vat_rate, lineTotalHt: l.line_total_ht, unitsPerCase: l.units_per_case, image: null as DocImage,
+      category: l.category, recommendationType: l.recommendation_type, purchaseCount: l.purchase_count, lastOrderDate: l.last_order_date, availability: l.availability, confidence: l.confidence, rationale: l.rationale,
     }))),
     totals: { subtotalHt: o.subtotal_ht, discountTotalHt: o.discount_total_ht, totalHt: o.total_ht, totalVat: o.total_vat, totalTtc: o.total_ttc },
     conditions: o.conditions,
     arguments: Array.isArray(o.arguments) ? o.arguments.slice(0, 2) : [],
   };
-  // Images chargées séquentiellement (une seule connexion transactionnelle)
-  for (const [i, l] of lines.entries()) doc.lines[i]!.image = await productImage(db, l.product_id);
+  const images = await productImages(db, lines.map((l) => l.product_id));
+  for (const [i, l] of lines.entries()) doc.lines[i]!.image = images.get(l.product_id) ?? null;
   return { doc, productIds: lines.map((l) => l.product_id), master: new Map(lines.map((l) => [l.reference, { ean: l.ean, name: l.name }])) };
 }
 
@@ -91,12 +102,13 @@ async function loadProductDocs(db: Db, productIds: string[]): Promise<ProductDoc
     `select id, reference, ean, brand, name, description, category, units_per_case, pcb, sale_price_ht, vat_rate, availability, marketing_points, length_cm, width_cm, height_cm, weight_kg
      from products where id = any($1::uuid[]) order by reference`, [productIds])).rows;
   const out: ProductDocData[] = [];
+  const images = await productImages(db, rows.map((p) => p.id));
   for (const p of rows) {
     out.push({
       reference: p.reference, ean: p.ean, brand: p.brand, name: p.name, description: p.description, category: p.category, unitsPerCase: p.units_per_case, pcb: p.pcb,
       priceHt: p.sale_price_ht, vatRate: p.vat_rate, availability: p.availability, marketingPoints: p.marketing_points ?? [],
       dimensions: p.length_cm && p.width_cm && p.height_cm ? `${p.length_cm} × ${p.width_cm} × ${p.height_cm} cm` : null,
-      weightKg: p.weight_kg, image: await productImage(db, p.id),
+      weightKg: p.weight_kg, image: images.get(p.id) ?? null,
     });
   }
   return out;
@@ -105,13 +117,12 @@ async function loadProductDocs(db: Db, productIds: string[]): Promise<ProductDoc
 export type GeneratedAsset = { id: string; kind: string; filename: string; validation: ValidationReport | null; status: "created" | "not_configured"; reason?: string };
 
 /** « Créer mes supports » : génère, valide et associe les documents à l'offre. */
-export async function generateOfferAssets(db: Db, orgId: string, userId: string | null, offerId: string, kinds: AssetKind[]): Promise<GeneratedAsset[]> {
+export async function generateOfferAssets(db: Db, orgId: string, userId: string | null, offerId: string, kinds: AssetKind[], opts: { jobId?: string } = {}): Promise<GeneratedAsset[]> {
   const { doc, productIds, master } = await loadOfferDoc(db, orgId, offerId);
-  const job = await db.query<{ id: string }>(
+  const jobId = opts.jobId ?? (await db.query<{ id: string }>(
     `insert into creative_jobs (organization_id, kind, status, offer_id, product_ids, input, created_by) values ($1,'offer_assets','running',$2,$3,$4,$5) returning id`,
     [orgId, offerId, productIds, { kinds }, userId],
-  );
-  const jobId = job.rows[0]!.id;
+  )).rows[0]!.id;
   const results: GeneratedAsset[] = [];
   const version = Number((await db.query<{ n: number }>(`select count(*)::int as n from generated_assets where offer_id = $1`, [offerId])).rows[0]!.n) + 1;
 
@@ -144,9 +155,10 @@ export async function generateOfferAssets(db: Db, orgId: string, userId: string 
       const cov = await loadCustomerCoverage(db, orgId, o.customer_id, today, { productIds });
       const offerQty = new Map(doc.lines.map((l, k) => [productIds[k]!, { qty: l.quantity, price: l.unitPriceHt }]));
       const rows = [];
+      const covImages = await productImages(db, cov.rows.map((r) => r.productId));
       for (const r of cov.rows) {
         const inOffer = offerQty.get(r.productId);
-        rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: await productImage(db, r.productId),
+        rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: covImages.get(r.productId) ?? null,
           recommendedQty: inOffer ? inOffer.qty : r.recommendedQty, priceHt: inOffer ? inOffer.price : r.priceHt });
       }
       const hypotheses = [...new Set(cov.rows.flatMap((r) => r.hypotheses))];
@@ -157,6 +169,35 @@ export async function generateOfferAssets(db: Db, orgId: string, userId: string 
       v.ok = v.checks.every((c) => c.ok);
       await store(kind, `Analyse-${safeNo}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         await generateCoverageExcel({ customerName: cov.customerName, date: today, offerNumber: doc.number, rows, complementary: cov.complementary, news: cov.news, hypotheses }, b.brand), v, b.templateVersion);
+    } else if (kind === "synthesis_pdf") {
+      const b = await loadBrand(db, orgId, "offer_pdf");
+      const cat = new Map<string, { lines: number; total: number }>();
+      const typ = new Map<string, { lines: number; total: number }>();
+      for (const l of doc.lines) {
+        for (const [m, k] of [[cat, l.category ?? "Sans catégorie"], [typ, l.recommendationType ?? "manual"]] as const) {
+          const v = m.get(k) ?? { lines: 0, total: 0 };
+          m.set(k, { lines: v.lines + 1, total: v.total + Number(l.lineTotalHt) });
+        }
+      }
+      const rank: Record<string, number> = { reorder: 0, back_in_stock: 1, permanent: 2, complementary: 3, new_product: 4, manual: 5 };
+      const priorities = [...doc.lines].sort((a, z) => (rank[a.recommendationType ?? "manual"] ?? 9) - (rank[z.recommendationType ?? "manual"] ?? 9) || Number(z.lineTotalHt) - Number(a.lineTotalHt)).slice(0, 20);
+      const asList = (m: Map<string, { lines: number; total: number }>) => [...m.entries()].sort((a, z) => z[1].total - a[1].total).map(([k, v]) => ({ k, lines: v.lines, totalHt: v.total.toFixed(2) }));
+      await store(kind, `Synthese-${safeNo}.pdf`, "application/pdf", await generateSynthesisPdf({
+        offerNumber: doc.number, customerName: doc.customer.name, date: doc.date, totals: { totalHt: doc.totals.totalHt, lines: doc.lines.length },
+        byCategory: asList(cat).map((x) => ({ category: x.k, lines: x.lines, totalHt: x.totalHt })), byType: asList(typ).map((x) => ({ type: x.k, lines: x.lines, totalHt: x.totalHt })),
+        priorities: priorities.map((l) => ({ reference: l.reference, name: l.description, type: l.recommendationType ?? null, quantity: l.quantity, lineTotalHt: l.lineTotalHt, rationale: l.rationale ?? null })),
+        notes: [
+          "Montants issus de l'offre (prix vérifiés au moment de la construction ; aucun prix inventé).",
+          "Réassort et permanents : quantités calculées sur le rythme d'achat du client (estimations d'après les factures, sauf stock déclaré).",
+          "Nouveautés et compléments : quantités de découverte (colisage minimal).",
+        ],
+      }, b.brand), { ok: true, checks: [{ name: "Totaux identiques à l'offre", ok: dec(doc.lines.reduce((a, l) => a + Number(l.lineTotalHt), 0).toFixed(2)).minus(dec(doc.totals.totalHt)).abs().lte(dec(doc.totals.discountTotalHt).plus("0.05")) }] }, b.templateVersion);
+    } else if (kind === "priority_pdf") {
+      const b = await loadBrand(db, orgId, "catalog");
+      const rank: Record<string, number> = { reorder: 0, back_in_stock: 1, permanent: 2, complementary: 3, new_product: 4, manual: 5 };
+      const top = [...doc.lines.map((l, k) => ({ l, id: productIds[k]! }))].sort((a, z) => (rank[a.l.recommendationType ?? "manual"] ?? 9) - (rank[z.l.recommendationType ?? "manual"] ?? 9) || Number(z.l.lineTotalHt) - Number(a.l.lineTotalHt)).slice(0, 24);
+      const prods = await loadProductDocs(db, top.map((t) => t.id));
+      await store(kind, `Selection-prioritaire-${safeNo}.pdf`, "application/pdf", await generateCatalog(`Sélection prioritaire — ${doc.customer.name}`, top.map((t) => prods.find((p) => p.reference === t.l.reference)!).filter(Boolean), b.brand, 3), { ok: true, checks: [{ name: "Photos issues des médias autorisés", ok: true }] }, b.templateVersion);
     } else if (kind === "product_sheet") {
       const b = await loadBrand(db, orgId, "product_sheet");
       for (const p of await loadProductDocs(db, productIds)) {
@@ -173,7 +214,7 @@ export async function generateOfferAssets(db: Db, orgId: string, userId: string 
       if (res.status === "not_configured") results.push({ id: "", kind, filename: "", validation: null, status: "not_configured", reason: res.reason });
     }
   }
-  await db.query(`update creative_jobs set status = 'succeeded', finished_at = now() where id = $1`, [jobId]);
+  if (!opts.jobId) await db.query(`update creative_jobs set status = 'succeeded', finished_at = now() where id = $1`, [jobId]);
   await audit(db, orgId, userId ? { type: "user", userId } : { type: "agent" }, "creative.assets_generated", { type: "offer", id: offerId }, { kinds, version });
   return results;
 }
@@ -207,7 +248,9 @@ export async function buildCustomerCoverageExcel(db: Db, orgId: string, customer
   const b = await loadBrand(db, orgId, "offer_excel");
   const cov = await loadCustomerCoverage(db, orgId, customerId, today);
   const rows = [];
-  for (const r of cov.rows.slice(0, 60)) rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: await productImage(db, r.productId) });
+  const all = cov.rows.slice(0, 2000);
+  const images = await productImages(db, all.map((r) => r.productId));
+  for (const r of all) rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: images.get(r.productId) ?? null });
   const data = await generateCoverageExcel({ customerName: cov.customerName, date: today, offerNumber: null, rows, complementary: cov.complementary, news: cov.news, hypotheses: [...new Set(cov.rows.flatMap((r) => r.hypotheses))] }, b.brand);
   return { filename: `Analyse-couverture-${cov.customerName.replace(/[^A-Za-z0-9-]+/g, "-").slice(0, 40)}-${today}.xlsx`, data };
 }

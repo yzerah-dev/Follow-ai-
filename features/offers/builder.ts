@@ -22,7 +22,15 @@ export type BuilderProduct = {
   availableFrom: string | null;
 };
 
-export type BuilderItem = { productId: string; suggestedQty: string; rationale?: string; discountPct?: string };
+/** Métadonnées commerciales d'une ligne (moteur de sélection) : type de recommandation, historique, confiance. */
+export type LineMeta = {
+  recommendationType?: "reorder" | "permanent" | "back_in_stock" | "complementary" | "new_product" | "manual";
+  confidence?: "verified" | "declared" | "high" | "medium" | "low";
+  purchaseCount?: number;
+  lastOrderDate?: string | null;
+  historyQty?: string | null;
+};
+export type BuilderItem = { productId: string; suggestedQty: string; rationale?: string; discountPct?: string; meta?: LineMeta };
 
 export type BuilderInput = {
   customer: { id: string; minOrderAmount: string | null; francoAmount: string | null };
@@ -46,6 +54,7 @@ export type DraftLine = {
   lineTotalHt: string;
   rationale: string | null;
   notes: string[];
+  meta: LineMeta;
 };
 
 export type Warning = { code: string; message: string; productId?: string };
@@ -78,8 +87,17 @@ export function buildOfferDraft(input: BuilderInput): OfferDraft {
   const warnings: Warning[] = [];
   const byId = new Map(input.products.map((p) => [p.id, p]));
   let anyDiscount = false;
-
+  // Doublons : une seule ligne par produit, quantités additionnées (signalé).
+  const merged = new Map<string, BuilderItem>();
   for (const item of input.items) {
+    const prev = merged.get(item.productId);
+    if (prev) {
+      merged.set(item.productId, { ...prev, suggestedQty: dec(prev.suggestedQty).plus(dec(item.suggestedQty)).toFixed(3) });
+      warnings.push({ code: "duplicate_merged", message: `Produit présent plusieurs fois : lignes fusionnées.`, productId: item.productId });
+    } else merged.set(item.productId, item);
+  }
+
+  for (const item of merged.values()) {
     const p = byId.get(item.productId);
     if (!p) {
       excluded.push({ code: "unknown_product", message: "Produit introuvable dans le catalogue.", productId: item.productId });
@@ -118,6 +136,7 @@ export function buildOfferDraft(input: BuilderInput): OfferDraft {
       lineTotalHt: lineTotal(qty, price.unitPriceHt, discount).toFixed(2),
       rationale: item.rationale ?? null,
       notes,
+      meta: item.meta ?? {},
     });
     for (const n of notes) if (n.startsWith("Disponibilité") || n.startsWith("Stock")) warnings.push({ code: "availability", message: `${p.reference} — ${n}`, productId: p.id });
   }

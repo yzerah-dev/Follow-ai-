@@ -18,7 +18,9 @@
     "test:all": "npm run typecheck && npm run lint && npm run test && npm run test:integration",
     "e2e": "playwright test --trace off",
     "db:reset": "tsx scripts/db-reset.ts",
-    "db:seed": "tsx scripts/db-seed.ts"
+    "db:seed": "tsx scripts/db-seed.ts",
+    "perf:seed": "tsx scripts/perf/seed-large.ts",
+    "perf": "NODE_OPTIONS=--expose-gc tsx scripts/perf/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

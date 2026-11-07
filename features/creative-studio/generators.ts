@@ -3,6 +3,7 @@
  * Séparation : données (validées) → composition (pdf-lib / ExcelJS) → validation → stockage.
  */
 import ExcelJS from "exceljs";
+import { createHash } from "node:crypto";
 import { rgb } from "pdf-lib";
 import { A4, createDoc, embedImage, footer, header, hexToRgb, imageBox, text, textRight, wrap, type Brand } from "@/lib/documents/pdf";
 import { formatMoney, formatQty, dec, lineTotal, computeTotals } from "@/lib/money";
@@ -21,7 +22,19 @@ export type OfferDocLine = {
   lineTotalHt: string;
   unitsPerCase: number | null;
   image: DocImage;
+  // Contexte commercial (offres construites par le moteur de sélection)
+  category?: string | null;
+  recommendationType?: string | null;
+  purchaseCount?: number | null;
+  lastOrderDate?: string | null;
+  availability?: string | null;
+  confidence?: string | null;
+  rationale?: string | null;
 };
+
+const REC_LABEL: Record<string, string> = { reorder: "Réassort", permanent: "Permanent", back_in_stock: "Retour en stock", complementary: "Complémentaire", new_product: "Nouveauté", manual: "Ajout manuel" };
+const AVAIL_LABEL: Record<string, string> = { in_stock: "En stock", low_stock: "Stock faible", out_of_stock: "Rupture", on_order: "En commande", unknown: "Inconnue" };
+const CONF_LABEL: Record<string, string> = { verified: "Vérifié", declared: "Déclaré", high: "Estimation fiable", medium: "Estimation moyenne", low: "Estimation fragile" };
 
 export type OfferDocData = {
   number: string;
@@ -155,6 +168,16 @@ export async function generateOfferPdf(data: OfferDocData, brand: Brand, opts: {
   return Buffer.from(await c.doc.save());
 }
 
+/** Image Excel dédupliquée par contenu (une seule copie dans le classeur, même pour 500 lignes). */
+function excelImage(wb: ExcelJS.Workbook, cache: Map<string, number>, img: NonNullable<DocImage>): number {
+  const key = createHash("sha1").update(img.data).digest("hex");
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  const id = wb.addImage({ base64: `data:${img.mime};base64,${img.data.toString("base64")}`, extension: img.mime === "image/jpeg" ? "jpeg" : "png" });
+  cache.set(key, id);
+  return id;
+}
+
 export async function generateOfferExcel(data: OfferDocData, brand: Brand, opts: { showImages: boolean }): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Follow.AI — Studio créatif";
@@ -172,8 +195,15 @@ export async function generateOfferExcel(data: OfferDocData, brand: Brand, opts:
     { key: "rem", width: 9 },
     { key: "vat", width: 8 },
     { key: "total", width: 14 },
+    { key: "cat", width: 18 },
+    { key: "type", width: 15 },
+    { key: "hist", width: 11 },
+    { key: "last", width: 13 },
+    { key: "avail", width: 13 },
+    { key: "conf", width: 17 },
+    { key: "why", width: 60 },
   ];
-  ws.mergeCells("A1:J1");
+  ws.mergeCells("A1:Q1");
   ws.getCell("A1").value = `${brand.companyName} — Proposition commerciale ${data.number}${brand.isDemo ? " (DÉMONSTRATION)" : ""}`;
   ws.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
   ws.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
@@ -186,25 +216,28 @@ export async function generateOfferExcel(data: OfferDocData, brand: Brand, opts:
   ws.getCell("B5").value = data.validUntil ? formatDate(data.validUntil) : "Non précisée";
   ["A3", "A4", "A5"].forEach((a) => (ws.getCell(a).font = { bold: true }));
   const head = ws.getRow(7);
-  head.values = ["Visuel", "Référence", "EAN", "Désignation", "Colisage", "Quantité", "PU HT (€)", "Remise %", "TVA %", "Total HT (€)"];
+  head.values = ["Photo", "Référence", "EAN", "Désignation", "Colisage", "Quantité suggérée", "Prix HT (€)", "Remise %", "TVA %", "Total HT (€)", "Catégorie", "Type de recommandation", "Historique (commandes)", "Dernière commande", "Disponibilité", "Niveau de confiance", "Justification commerciale"];
   head.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${brand.secondaryColor.replace("#", "").toUpperCase()}` } };
     cell.alignment = { vertical: "middle" };
   });
   let r = 8;
+  const imgCache = new Map<string, number>();
   for (const l of data.lines) {
     const row = ws.getRow(r);
     // Valeurs numériques issues du calcul décimal (pas de recalcul flottant dans Excel)
-    row.values = ["", l.reference, l.ean ?? "", l.description, l.unitsPerCase ?? "", Number(l.quantity), Number(dec(l.unitPriceHt).toFixed(4)), Number(l.discountPct), Number(l.vatRate), Number(l.lineTotalHt)];
+    row.values = ["", l.reference, l.ean ?? "Inconnu", l.description, l.unitsPerCase ?? "Inconnu", Number(l.quantity), Number(dec(l.unitPriceHt).toFixed(4)), Number(l.discountPct), Number(l.vatRate), Number(l.lineTotalHt),
+      l.category ?? "Inconnue", REC_LABEL[l.recommendationType ?? "manual"] ?? "—", l.purchaseCount ?? 0, l.lastOrderDate ? formatDate(l.lastOrderDate) : "Jamais commandé",
+      AVAIL_LABEL[l.availability ?? "unknown"] ?? "Inconnue", l.confidence ? CONF_LABEL[l.confidence] ?? l.confidence : "—", l.rationale ?? ""];
+    row.getCell(17).alignment = { wrapText: true, vertical: "middle" };
     row.getCell(7).numFmt = "#,##0.00##";
     row.getCell(10).numFmt = "#,##0.00";
     row.alignment = { vertical: "middle" };
     if (opts.showImages) {
       row.height = 60;
       if (l.image) {
-        const id = wb.addImage({ base64: `data:${l.image.mime};base64,${l.image.data.toString("base64")}`, extension: l.image.mime === "image/jpeg" ? "jpeg" : "png" });
-        ws.addImage(id, { tl: { col: 0.1, row: r - 1 + 0.1 }, ext: { width: 70, height: 70 } });
+        ws.addImage(excelImage(wb, imgCache, l.image), { tl: { col: 0.1, row: r - 1 + 0.1 }, ext: { width: 70, height: 70 } });
       } else row.getCell(1).value = "Photo non disponible";
     }
     r++;
@@ -448,6 +481,7 @@ export async function generateCoverageExcel(data: CoverageDocData, brand: Brand)
   });
   const extras = [...data.news.map((n) => `Nouveauté : ${n}`), ...data.complementary.map((n) => `Complément : ${n}`)];
   let r = 5;
+  const imgCache = new Map<string, number>();
   for (const [k, x] of data.rows.entries()) {
     const row = ws.getRow(r);
     const rate = x.dailyRate === null ? UNKNOWN : `${Number(x.dailyRate)} (${x.rateSource === "sell_out" ? "sorties caisse" : "estimé"})`;
@@ -461,8 +495,7 @@ export async function generateCoverageExcel(data: CoverageDocData, brand: Brand)
     row.alignment = { vertical: "middle", wrapText: true };
     row.height = 60;
     if (x.image) {
-      const id = wb.addImage({ base64: `data:${x.image.mime};base64,${x.image.data.toString("base64")}`, extension: x.image.mime === "image/jpeg" ? "jpeg" : "png" });
-      ws.addImage(id, { tl: { col: 3.1, row: r - 1 + 0.1 }, ext: { width: 70, height: 70 } });
+      ws.addImage(excelImage(wb, imgCache, x.image), { tl: { col: 3.1, row: r - 1 + 0.1 }, ext: { width: 70, height: 70 } });
     } else row.getCell(4).value = "Photo non disponible";
     r++;
   }
@@ -480,4 +513,68 @@ export async function generateCoverageExcel(data: CoverageDocData, brand: Brand)
   lines.forEach((t, i) => { m.getCell(`A${i + 1}`).value = t; if (i === 0) m.getCell("A1").font = { bold: true, size: 14 }; });
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf as ArrayBuffer);
+}
+
+// ------------------------------------------------------------------ Synthèse commerciale (PDF)
+
+export type SynthesisData = {
+  offerNumber: string;
+  customerName: string;
+  date: string;
+  totals: { totalHt: string; lines: number };
+  byCategory: { category: string; lines: number; totalHt: string }[];
+  byType: { type: string; lines: number; totalHt: string }[];
+  priorities: { reference: string; name: string; type: string | null; quantity: string; lineTotalHt: string; rationale: string | null }[];
+  notes: string[];
+};
+
+/** Synthèse d'une offre volumineuse : répartition par catégorie et par type, références prioritaires, méthode. Chiffres issus de l'offre uniquement. */
+export async function generateSynthesisPdf(d: SynthesisData, brand: Brand): Promise<Buffer> {
+  const c = await createDoc(brand, `Synthèse ${d.offerNumber}`);
+  const pages: ReturnType<typeof c.doc.addPage>[] = [];
+  let page = c.doc.addPage([A4.w, A4.h]);
+  pages.push(page);
+  header(page, c, `Synthèse commerciale — ${d.customerName}`, `Proposition ${d.offerNumber}`);
+  let y = A4.h - 120;
+  const grey = rgb(0.45, 0.47, 0.52);
+  const ensure = (h: number) => {
+    if (y - h < 70) {
+      page = c.doc.addPage([A4.w, A4.h]);
+      pages.push(page);
+      header(page, c, `Synthèse commerciale — ${d.customerName}`, "");
+      y = A4.h - 120;
+    }
+  };
+  const title = (s: string) => { ensure(30); text(page, c, s, 40, y, 12, { bold: true, color: hexToRgb(brand.primaryColor) }); y -= 18; };
+  const row = (cells: [string, number, "l" | "r"][], bold = false) => {
+    ensure(16);
+    for (const [s, x, a] of cells) {
+      if (a === "r") textRight(page, c, s, x, y, 9, bold);
+      else text(page, c, s, x, y, 9, { bold, maxWidth: 300 });
+    }
+    y -= 14;
+  };
+  text(page, c, `${d.totals.lines} référence(s) · ${formatMoney(d.totals.totalHt)} HT · établie le ${formatDate(d.date)}`, 40, y, 11, { bold: true });
+  y -= 26;
+  title("Répartition par catégorie");
+  row([["Catégorie", 40, "l"], ["Lignes", 420, "r"], ["Total HT", A4.w - 40, "r"]], true);
+  for (const k of d.byCategory) row([[k.category, 40, "l"], [String(k.lines), 420, "r"], [formatMoney(k.totalHt), A4.w - 40, "r"]]);
+  y -= 8;
+  title("Répartition par type de recommandation");
+  for (const k of d.byType) row([[REC_LABEL[k.type] ?? k.type, 40, "l"], [String(k.lines), 420, "r"], [formatMoney(k.totalHt), A4.w - 40, "r"]]);
+  y -= 8;
+  title("Références prioritaires");
+  for (const p of d.priorities) {
+    ensure(30);
+    text(page, c, `${p.reference} — ${p.name}`, 40, y, 9, { bold: true, maxWidth: 360 });
+    textRight(page, c, `${Number(p.quantity)} u. · ${formatMoney(p.lineTotalHt)}`, A4.w - 40, y, 9);
+    y -= 12;
+    if (p.rationale) { for (const l of wrap(c, `${REC_LABEL[p.type ?? "manual"] ?? ""} : ${p.rationale}`, 8, A4.w - 100).slice(0, 2)) { text(page, c, l, 52, y, 8, { color: grey }); y -= 10; } }
+    y -= 4;
+  }
+  y -= 6;
+  title("Méthode");
+  for (const n of d.notes) for (const l of wrap(c, n, 8.5, A4.w - 80)) { ensure(12); text(page, c, l, 40, y, 8.5, { color: grey }); y -= 11; }
+  pages.forEach((p, i) => footer(p, c, i + 1, pages.length));
+  return Buffer.from(await c.doc.save());
 }

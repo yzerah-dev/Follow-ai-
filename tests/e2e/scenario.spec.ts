@@ -34,14 +34,14 @@ test("scénario principal : réassort → offre → supports → email → objec
   await expect(page.getByTestId("growth-plan")).toContainText("Les leviers chiffrés couvrent");
 
   // 4-6. LÉA prépare l'offre
-  await page.getByRole("button", { name: /^Préparer l'offre/ }).click();
+  await page.getByRole("button", { name: "Préparer l'offre", exact: true }).click();
   await page.waitForURL(/\/offres\/[0-9a-f-]{36}$/);
   await expect(page.getByRole("heading", { name: /Offre OF-\d{4}-\d{5}/ })).toBeVisible();
   await expect(page.getByText("À valider").first()).toBeVisible();
 
   // 7-8. Supports : PDF + Excel illustré, contrôles automatiques, validation
   await page.getByRole("button", { name: "Créer mes supports" }).click();
-  await expect(page.getByText("2 document(s) généré(s).")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("job-progress")).toContainText("Documents prêts", { timeout: 30_000 }); // génération en tâche de fond
   await expect(page.getByTestId("asset")).toHaveCount(2);
   await expect(page.getByText(/Contrôles OK/)).toHaveCount(2);
   for (let i = 0; i < 2; i++) {
@@ -174,4 +174,37 @@ test("WhatsApp : discussion visible et LÉA répond aux questions du client", as
   await page.getByLabel("Votre réponse").fill("Je vous confirme la livraison demain matin. Bruno");
   await page.getByRole("button", { name: "Envoyer" }).click();
   await expect(page.getByText("Message envoyé (simulation).")).toBeVisible();
+});
+
+test("grand catalogue : offre complète, éditeur (sauvegarde automatique, historique), génération asynchrone", async ({ page }) => {
+  await login(page, "bruno@demo.follow.ai");
+  await page.goto("/clients?q=Maison%20Martin");
+  await page.getByRole("link", { name: "Maison Martin & Fils" }).click();
+  await page.waitForURL(/\/clients\/[0-9a-f-]{36}$/);
+  await page.getByLabel("Nombre maximal de références").fill("300");
+  await page.getByRole("button", { name: /Préparer l'offre complète/ }).click();
+  await page.waitForURL(/\/offres\/[0-9a-f-]{36}$/);
+  const editor = page.getByTestId("offer-editor");
+  await expect(editor).toBeVisible();
+  const first = page.getByTestId("offer-line").first();
+  await expect(first).toBeVisible();
+  // Recherche et filtre côté client
+  await editor.getByLabel("Rechercher dans l'offre").fill("zzz-aucun");
+  await expect(page.getByTestId("offer-line")).toHaveCount(0);
+  await editor.getByLabel("Rechercher dans l'offre").fill("");
+  // Modification inline : arrondie au colis et enregistrée automatiquement
+  const qty = page.getByTestId("offer-line").first().getByRole("textbox");
+  await qty.fill("1");
+  await expect(page.getByTestId("save-status")).toContainText(/Enregistré · révision 2/, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByTestId("offer-history")).toContainText("quantité");
+  // Studio : synthèse + sélection prioritaire générées en tâche de fond, avec progression
+  await page.getByRole("button", { name: "Offre PDF" }).click(); // désélectionne
+  await page.getByRole("button", { name: "Offre Excel illustrée" }).click(); // désélectionne
+  await page.getByRole("button", { name: "Synthèse commerciale" }).click();
+  await page.getByRole("button", { name: "Sélection prioritaire" }).click();
+  await page.getByRole("button", { name: "Créer mes supports" }).click();
+  await expect(page.getByTestId("job-progress")).toContainText("Documents prêts", { timeout: 30_000 });
+  await expect(page.getByTestId("asset").filter({ hasText: /^Synthese-/ })).toHaveCount(1);
+  await expect(page.getByTestId("asset").filter({ hasText: /Selection-prioritaire-/ })).toHaveCount(1);
 });

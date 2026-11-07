@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireContext, type AppContext } from "@/lib/auth/context";
@@ -10,8 +11,11 @@ import { rateLimit } from "@/lib/security/rate-limit";
 import { audit } from "@/lib/security/audit";
 import { env } from "@/lib/env";
 import { toIsoDate } from "@/lib/utils";
-import { createOfferFromOpportunity, createOfferDraft, suggestItemsForCustomer, decideOffer, acceptOfferAndPrepareOrder, markOfferLost } from "@/features/offers/service";
-import { generateOfferAssets, decideAsset, ASSET_KINDS } from "@/features/creative-studio/service";
+import { createOfferFromSelection } from "@/features/selection/offer";
+import { applyLineChanges, searchProductsForOffer, StaleRevisionError } from "@/features/offers/editor";
+import { enqueueAssetsJob, runAssetsJob, JOB_KINDS } from "@/features/creative-studio/jobs";
+import { createOfferFromOpportunity, createOfferDraft, OfferNotBuildable, suggestItemsForCustomer, decideOffer, acceptOfferAndPrepareOrder, markOfferLost } from "@/features/offers/service";
+import { decideAsset } from "@/features/creative-studio/service";
 import { draftOfferEmail } from "@/features/agent/lea";
 import { decideMessage, sendManualMessage, simulateCustomerReply } from "@/features/conversations/service";
 import { runOpportunityScan } from "@/features/opportunities/service";
@@ -48,13 +52,20 @@ export async function createOfferFromOpportunityAction(opportunityId: string) {
   redirect(`/offres/${offerId}`);
 }
 
-export async function createOfferForCustomerAction(customerId: string) {
+export async function createOfferForCustomerAction(customerId: string, opts?: { maxLines?: number; budgetHt?: string | null }) {
   let offerId = "";
   const r = await run(canWrite, async (db, ctx) => {
     const id = uuid.parse(customerId);
-    const items = await suggestItemsForCustomer(db, id, null);
-    if (!items.length) throw new Error("Aucun historique d'achat : ajoutez des produits manuellement.");
-    offerId = (await createOfferDraft(db, ctx.org.organizationId, { userId: ctx.userId }, { customerId: id, items, source: "lea", arguments: ["Sélection basée sur les références habituelles du client."] })).offerId;
+    const o = z.object({ maxLines: z.number().int().min(1).max(1000).optional(), budgetHt: z.string().regex(/^\d+([.,]\d{1,2})?$/).nullable().optional() }).parse(opts ?? {});
+    // Moteur de sélection grands catalogues : réassorts, permanents, retours en stock, compléments, nouveautés.
+    try {
+      offerId = (await createOfferFromSelection(db, ctx.org.organizationId, { userId: ctx.userId }, id, toIsoDate(new Date()), { maxLines: o.maxLines ?? 200, budgetHt: o.budgetHt?.replace(",", ".") ?? null })).offerId;
+    } catch (e) {
+      if (!(e instanceof OfferNotBuildable)) throw e;
+      const items = await suggestItemsForCustomer(db, id, null);
+      if (!items.length) throw new Error("Aucun historique d'achat : ajoutez des produits manuellement.");
+      offerId = (await createOfferDraft(db, ctx.org.organizationId, { userId: ctx.userId }, { customerId: id, items, source: "lea", arguments: ["Sélection basée sur les références habituelles du client."] })).offerId;
+    }
   }, { key: "offer", limit: 20 });
   if (!r.ok) return r;
   redirect(`/offres/${offerId}`);
@@ -67,16 +78,24 @@ export async function decideOfferAction(offerId: string, decision: "approved" | 
   return r;
 }
 
-export async function generateAssetsAction(offerId: string, kinds: string[]) {
-  const parsedKinds = z.array(z.enum(ASSET_KINDS)).min(1).max(6).parse(kinds);
-  const r = await run(canWrite, async (db, ctx) => {
-    const res = await generateOfferAssets(db, ctx.org.organizationId, ctx.userId, uuid.parse(offerId), parsedKinds);
-    const created = res.filter((x) => x.status === "created").length;
-    const notConfigured = res.filter((x) => x.status === "not_configured");
-    return `${created} document(s) généré(s).${notConfigured.length ? ` ${notConfigured.map((n) => n.reason).join(" ")}` : ""}`;
+/**
+ * « Créer mes supports » : la génération part en tâche de fond (progression, reprise sur erreur).
+ * La réponse est immédiate ; le panneau suit l'avancement via /api/jobs/[id].
+ */
+export async function generateAssetsAction(offerId: string, kinds: string[]): Promise<(ActionResult & { jobId?: string })> {
+  const parsedKinds = z.array(z.enum(JOB_KINDS)).min(1).max(12).safeParse(kinds);
+  if (!parsedKinds.success) return { ok: false, error: "Types de documents invalides." };
+  let jobId = "";
+  const ctx = await requireContext();
+  const r = await run(canWrite, async (db) => {
+    jobId = await enqueueAssetsJob(db, ctx.org.organizationId, ctx.userId, uuid.parse(offerId), parsedKinds.data);
+    return `Génération lancée (${parsedKinds.data.length} document(s)).`;
   }, { key: "creative", limit: 10 });
-  revalidatePath(`/offres/${offerId}`);
-  return r;
+  if (!r.ok) return r;
+  after(async () => {
+    await runAssetsJob(jobId, (fn) => withUser(ctx.userId, fn)).catch((e) => console.error("creative job", jobId, e));
+  });
+  return { ...r, jobId };
 }
 
 export async function decideAssetAction(assetId: string, offerId: string, decision: "approved" | "rejected") {
@@ -375,4 +394,50 @@ export async function declareExistingConsentAction() {
     await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "consent.declared_existing_customers", undefined, n);
     return `Consentement déclaré : ${n.email} contact(s) e-mail, ${n.wa} contact(s) WhatsApp mis à jour. Les listes d'opposition restent appliquées.`;
   });
+}
+
+const lineChangeSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("update"), productId: z.uuid(), quantity: z.string().max(16).optional(), discountPct: z.string().max(8).optional() }),
+  z.object({ op: z.literal("remove"), productId: z.uuid() }),
+  z.object({ op: z.literal("add"), productId: z.uuid(), quantity: z.string().max(16).optional() }),
+]);
+
+export type SaveLinesResult =
+  | { ok: true; revision: number; totals: { subtotalHt: string; totalHt: string; totalVat: string; totalTtc: string; lines: number }; rejected: { productId: string; reason: string }[]; statusReset: boolean }
+  | { ok: false; error: string; stale?: boolean };
+
+/** Sauvegarde automatique de l'éditeur d'offre : prix, colisage et remises recalculés côté serveur. */
+export async function saveOfferLinesAction(offerId: string, revision: number, changes: unknown[]): Promise<SaveLinesResult> {
+  const ctx = await requireContext();
+  if (!canWrite(ctx.org.role)) return { ok: false, error: "Action non autorisée." };
+  if (!rateLimit(`offer-lines:${ctx.userId}`, 120, 60_000).ok) return { ok: false, error: "Trop de sauvegardes en peu de temps, réessayez dans un instant." };
+  const parsed = z.object({ offerId: z.uuid(), revision: z.number().int().min(1), changes: z.array(lineChangeSchema).min(1).max(2000) }).safeParse({ offerId, revision, changes });
+  if (!parsed.success) return { ok: false, error: "Modifications invalides." };
+  try {
+    const r = await withUser(ctx.userId, (db) => applyLineChanges(db, ctx.org.organizationId, ctx.userId, parsed.data.offerId, parsed.data.revision, parsed.data.changes));
+    if (r.applied) revalidatePath(`/offres/${offerId}`);
+    return { ok: true, revision: r.revision, totals: r.totals, rejected: r.rejected, statusReset: r.statusReset };
+  } catch (e) {
+    if (e instanceof StaleRevisionError) return { ok: false, error: e.message, stale: true };
+    if (e instanceof Error && !/^(relation|column|syntax)/.test(e.message)) return { ok: false, error: e.message };
+    console.error(e);
+    return { ok: false, error: "Une erreur est survenue." };
+  }
+}
+
+export async function searchOfferProductsAction(offerId: string, q: string) {
+  const ctx = await requireContext();
+  if (!z.uuid().safeParse(offerId).success) return [];
+  return withUser(ctx.userId, (db) => searchProductsForOffer(db, ctx.org.organizationId, offerId, String(q).slice(0, 60)));
+}
+
+/** Reprise manuelle d'une génération en échec : seules les étapes manquantes sont refaites. */
+export async function resumeJobAction(jobId: string): Promise<ActionResult> {
+  const ctx = await requireContext();
+  if (!canWrite(ctx.org.role) || !z.uuid().safeParse(jobId).success) return { ok: false, error: "Action non autorisée." };
+  const exists = await withUser(ctx.userId, async (db) => (await db.query(`select 1 from creative_jobs where id = $1 and organization_id = $2 and status = 'failed'`, [jobId, ctx.org.organizationId])).rowCount);
+  if (!exists) return { ok: false, error: "Aucune génération en échec à reprendre." };
+  await withUser(ctx.userId, (db) => db.query(`update creative_jobs set attempts = least(attempts, 2) where id = $1`, [jobId]));
+  after(async () => { await runAssetsJob(jobId, (fn) => withUser(ctx.userId, fn)).catch((e) => console.error("creative job", jobId, e)); });
+  return { ok: true, message: "Reprise lancée." };
 }

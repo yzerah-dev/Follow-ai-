@@ -12,7 +12,7 @@ export type ContactCtx = { salutation: string | null; firstName: string | null; 
 export type OfferEmailCtx = {
   customerName: string;
   contact: ContactCtx;
-  offer: { number: string; validUntil: string | null; totalHt: string; lines: { reference: string; description: string; quantity: string }[] };
+  offer: { number: string; validUntil: string | null; totalHt: string; lineCount?: number; categories?: { name: string; lines: number }[]; lines: { reference: string; description: string; quantity: string }[] };
   history: { invoiceCount: number; usualReferences: string[] };
   newProductNames: string[];
   senderName: string;
@@ -83,7 +83,13 @@ export function mockOfferEmail(ctx: OfferEmailCtx): EmailDraft {
   const v = parseVoice(ctx.voice);
   const dynamic = v.tone === "dynamic";
   const personalized = ctx.history.invoiceCount >= 3 && ctx.history.usualReferences.length > 0;
-  const refs = ctx.offer.lines.slice(0, 6).map((l) => `• ${l.description} (réf. ${l.reference}) — ${Number(l.quantity)} unités`).join("\n");
+  const total = ctx.offer.lineCount ?? ctx.offer.lines.length;
+  // Offre volumineuse : résumé par catégorie + principales lignes ; le détail complet est dans l'offre et l'Excel joints.
+  const refs = total > 8
+    ? [`${total} références réparties en ${ctx.offer.categories?.length ?? "plusieurs"} catégorie(s)${ctx.offer.categories?.length ? ` : ${ctx.offer.categories.slice(0, 6).map((c) => `${c.name} (${c.lines})`).join(", ")}` : ""}.`,
+       "Principales lignes :", ...ctx.offer.lines.slice(0, 6).map((l) => `• ${l.description} (réf. ${l.reference}) — ${Number(l.quantity)} unités`),
+       `… et ${total - Math.min(6, ctx.offer.lines.length)} autre(s) référence(s), détaillées dans l'offre et le fichier Excel joints.`].join("\n")
+    : ctx.offer.lines.slice(0, 8).map((l) => `• ${l.description} (réf. ${l.reference}) — ${Number(l.quantity)} unités`).join("\n");
   const angle = personalized || ctx.opportunityType === "new_product" ? offerAngle(ctx.opportunityType, dynamic) : null;
   const intro = angle?.intro ?? (personalized
     ? `Au regard de vos derniers achats, j'ai préparé une sélection de réassort sur les références que vous travaillez régulièrement.`

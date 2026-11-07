@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Composition graphique contrôlée (pdf-lib, polices standard) :
  * aucune donnée n'est inventée, les visuels produits sont les fichiers sources fournis.
@@ -87,15 +88,23 @@ export function footer(page: PDFPage, c: Ctx, pageNo: number, total: number) {
   textRight(page, c, `${pageNo} / ${total}`, A4.w - 40, 38, 8);
 }
 
+// Une image identique (même contenu) n'est embarquée qu'une fois par document : catalogues de centaines de produits.
+const embedCache = new WeakMap<PDFDocument, Map<string, PDFImage | null>>();
+
 export async function embedImage(doc: PDFDocument, data: Buffer | null, mime: string | null): Promise<PDFImage | null> {
   if (!data) return null;
+  const key = createHash("sha1").update(data).digest("hex");
+  const cache = embedCache.get(doc) ?? embedCache.set(doc, new Map()).get(doc)!;
+  if (cache.has(key)) return cache.get(key)!;
+  let img: PDFImage | null = null;
   try {
-    if (mime === "image/png" || data.subarray(0, 4).toString("hex") === "89504e47") return await doc.embedPng(data);
-    if (mime === "image/jpeg" || data.subarray(0, 2).toString("hex") === "ffd8") return await doc.embedJpg(data);
+    if (mime === "image/png" || data.subarray(0, 4).toString("hex") === "89504e47") img = await doc.embedPng(data);
+    else if (mime === "image/jpeg" || data.subarray(0, 2).toString("hex") === "ffd8") img = await doc.embedJpg(data);
   } catch {
-    return null;
+    img = null;
   }
-  return null;
+  cache.set(key, img);
+  return img;
 }
 
 export function imageBox(page: PDFPage, c: Ctx, img: PDFImage | null, x: number, y: number, w: number, h: number, isDemo: boolean) {
