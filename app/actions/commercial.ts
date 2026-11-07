@@ -14,6 +14,7 @@ import { toIsoDate } from "@/lib/utils";
 import { createOfferFromSelection } from "@/features/selection/offer";
 import { applyLineChanges, searchProductsForOffer, StaleRevisionError } from "@/features/offers/editor";
 import { enqueueAssetsJob, runAssetsJob, JOB_KINDS } from "@/features/creative-studio/jobs";
+import { splitCustomerTarget, saveCustomerMonths, saveSalesTarget } from "@/features/targets/repo";
 import { createOfferFromOpportunity, createOfferDraft, OfferNotBuildable, suggestItemsForCustomer, decideOffer, acceptOfferAndPrepareOrder, markOfferLost } from "@/features/offers/service";
 import { decideAsset } from "@/features/creative-studio/service";
 import { draftOfferEmail } from "@/features/agent/lea";
@@ -440,4 +441,39 @@ export async function resumeJobAction(jobId: string): Promise<ActionResult> {
   await withUser(ctx.userId, (db) => db.query(`update creative_jobs set attempts = least(attempts, 2) where id = $1`, [jobId]));
   after(async () => { await runAssetsJob(jobId, (fn) => withUser(ctx.userId, fn)).catch((e) => console.error("creative job", jobId, e)); });
   return { ok: true, message: "Reprise lancée." };
+}
+
+/** Objectifs mensuels du client répartis selon la saisonnalité N-1 (les mois saisis à la main sont conservés). */
+export async function splitCustomerTargetAction(customerId: string): Promise<ActionResult> {
+  const r = await run(canWrite, async (db, ctx) => {
+    const res = await splitCustomerTarget(db, ctx.org.organizationId, ctx.userId, uuid.parse(customerId), Number(toIsoDate(new Date()).slice(0, 4)));
+    return res.source === "seasonality" ? "Objectifs mensuels répartis selon la saisonnalité N-1." : "Pas d'historique N-1 : objectif réparti à parts égales.";
+  });
+  revalidatePath(`/clients/${customerId}`);
+  return r;
+}
+
+export async function saveCustomerMonthsAction(customerId: string, months: (string | null)[]): Promise<ActionResult> {
+  const parsed = z.array(z.string().max(16).nullable()).length(12).safeParse(months);
+  if (!parsed.success) return { ok: false, error: "Objectifs mensuels invalides." };
+  const r = await run(canWrite, async (db, ctx) => {
+    await saveCustomerMonths(db, ctx.org.organizationId, ctx.userId, uuid.parse(customerId), Number(toIsoDate(new Date()).slice(0, 4)), parsed.data);
+    return "Objectifs mensuels enregistrés.";
+  });
+  revalidatePath(`/clients/${customerId}`);
+  return r;
+}
+
+/** Objectif annuel de l'entreprise ou d'un portefeuille commercial (gestion uniquement). */
+export async function saveSalesTargetAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const parsed = z.object({ scope: z.enum(["company", "portfolio"]), ownerUserId: z.string().optional(), targetHt: z.string().regex(/^\d+([.,]\d{1,2})?$/) }).safeParse(Object.fromEntries(form));
+  if (!parsed.success) return { ok: false, error: "Objectif invalide : indiquez un montant HT." };
+  const r = await run(canManage, async (db, ctx) => {
+    const owner = parsed.data.scope === "portfolio" ? uuid.parse(parsed.data.ownerUserId) : null;
+    await saveSalesTarget(db, ctx.org.organizationId, ctx.userId, { scope: parsed.data.scope, ownerUserId: owner, year: Number(toIsoDate(new Date()).slice(0, 4)), targetHt: parsed.data.targetHt.replace(",", ".") });
+    return "Objectif enregistré.";
+  });
+  revalidatePath("/parametres");
+  revalidatePath("/");
+  return r;
 }

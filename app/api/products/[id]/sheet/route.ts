@@ -32,7 +32,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     }
     return generateProductSheet(
       { reference: p.reference, ean: p.ean, brand: p.brand, name: p.name, description: p.description, category: p.category, unitsPerCase: p.units_per_case, pcb: p.pcb, priceHt: p.sale_price_ht, vatRate: p.vat_rate, availability: p.availability, marketingPoints: p.marketing_points, dimensions: null, weightKg: p.weight_kg, image },
-      { companyName: s.brand.companyName ?? s.name, primaryColor: tpl.primaryColor, secondaryColor: tpl.secondaryColor, accentColor: tpl.accentColor, footerText: "Fiche générée par Follow.AI — données du référentiel produit.", isDemo: s.is_demo },
+      { companyName: s.brand.companyName ?? s.name, primaryColor: tpl.primaryColor, secondaryColor: tpl.secondaryColor, accentColor: tpl.accentColor, footerText: "Fiche générée par LÉA.AI — données du référentiel produit.", isDemo: s.is_demo },
     );
   });
   if (!pdf) return new NextResponse("Introuvable", { status: 404 });

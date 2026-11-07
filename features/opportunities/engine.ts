@@ -151,7 +151,12 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
   const expires = (days: number) => addDays(today, days).toISOString();
 
   // 1. Réassort probable — produits achetés régulièrement dont la prochaine échéance approche
-  const isDormant = summary.daysSinceLast !== null && summary.daysSinceLast > settings.dormantAfterDays;
+  // Dormance relative à la fréquence propre au client (pas seulement un seuil fixe) : 2,5 × son cycle habituel,
+  // au moins 21 jours ; le seuil de l'organisation ne sert que si l'historique ne permet pas d'établir un cycle.
+  const dormantThreshold = summary.invoiceCount >= 3 && summary.meanIntervalDays
+    ? Math.max(21, Math.round(summary.meanIntervalDays * 2.5))
+    : settings.dormantAfterDays;
+  const isDormant = summary.daysSinceLast !== null && summary.daysSinceLast > dormantThreshold;
   if (!isDormant) {
     const due = habits.filter(
       (h) =>
@@ -212,8 +217,7 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
 
   // 2. Client dormant — ancien acheteur régulier sans commande depuis longtemps
   if (summary.invoiceCount >= 2 && summary.daysSinceLast !== null) {
-    const threshold = Math.max(settings.dormantAfterDays, (summary.meanIntervalDays ?? 0) * 2.5);
-    if (summary.daysSinceLast > threshold) {
+    if (summary.daysSinceLast > dormantThreshold) {
       const estimated = summary.avgBasket;
       const confidence = Number(clamp(0.3 + 0.05 * Math.min(summary.invoiceCount, 8), 0, 0.75).toFixed(3));
       const top = habits.slice(0, limits.dormantTop).map((h) => h.productId);
@@ -224,14 +228,15 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
         title: `Client inactif depuis ${summary.daysSinceLast} jours`,
         justification:
           `Dernière facture le ${summary.lastPurchase}, alors que le client commandait en moyenne tous les ${summary.meanIntervalDays ?? "?"} jours ` +
-          `(${summary.invoiceCount} factures). Panier moyen historique : ${estimated ? fmtEur(estimated) : "inconnu"} HT.`,
+          `(${summary.invoiceCount} factures)${summary.meanIntervalDays ? `, soit ${(summary.daysSinceLast / summary.meanIntervalDays).toFixed(1).replace(".", ",")} fois son cycle habituel` : ""}. ` +
+          `Panier moyen historique : ${estimated ? fmtEur(estimated) : "inconnu"} HT.`,
         confidence,
         estimatedValueHt: estimated,
         priority: priorityScore(estimated, confidence, 10),
         recommendedAction: "Relancer avec une sélection de ses références habituelles et proposer un rendez-vous.",
         suggestedDate: today,
         dataSources: sources(summary.invoiceCount),
-        details: { daysSinceLast: summary.daysSinceLast, meanIntervalDays: summary.meanIntervalDays, lastPurchase: summary.lastPurchase },
+        details: { daysSinceLast: summary.daysSinceLast, meanIntervalDays: summary.meanIntervalDays, lastPurchase: summary.lastPurchase, thresholdDays: dormantThreshold, basis: summary.invoiceCount >= 3 && summary.meanIntervalDays ? "cycle_client" : "seuil_organisation" },
         dedupeKey: `dormant:${customer.id}`,
         expiresAt: expires(45),
       });

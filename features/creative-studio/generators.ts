@@ -180,7 +180,7 @@ function excelImage(wb: ExcelJS.Workbook, cache: Map<string, number>, img: NonNu
 
 export async function generateOfferExcel(data: OfferDocData, brand: Brand, opts: { showImages: boolean }): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Follow.AI — Studio créatif";
+  wb.creator = "LÉA.AI — Studio créatif";
   wb.created = new Date();
   const ws = wb.addWorksheet(`Offre ${data.number}`.slice(0, 31), { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 } });
   const argb = `FF${brand.primaryColor.replace("#", "").toUpperCase()}`;
@@ -454,7 +454,7 @@ const UNKNOWN = "Inconnu";
 /** Excel « analyse de couverture » : une valeur inconnue est écrite « Inconnu », jamais 0 ; une estimation est toujours étiquetée. */
 export async function generateCoverageExcel(data: CoverageDocData, brand: Brand): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Follow.AI — LÉA";
+  wb.creator = "LÉA.AI";
   wb.created = new Date();
   const ws = wb.addWorksheet("Analyse", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 }, views: [{ state: "frozen", ySplit: 5 }] });
   const argb = `FF${brand.primaryColor.replace("#", "").toUpperCase()}`;

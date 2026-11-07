@@ -67,13 +67,13 @@ export function Sidebar(props: {
   };
   return (
     <aside className="sticky top-0 hidden h-screen w-[264px] shrink-0 flex-col overflow-y-auto border-r border-border bg-surface px-4 py-5 md:flex">
-      <Link href="/" className="mb-6 flex items-center gap-2 px-2" aria-label="Follow.AI — accueil">
+      <Link href="/" className="mb-6 flex items-center gap-2 px-2" aria-label="LÉA.AI — accueil">
         <svg width="30" height="22" viewBox="0 0 30 22" aria-hidden>
           <circle cx="7" cy="14" r="6.5" fill="#6e44ff" />
           <circle cx="17" cy="7" r="6.5" fill="#9b6bff" />
           <circle cx="24" cy="15" r="5" fill="#c4a8ff" />
         </svg>
-        <span className="text-[21px] font-bold tracking-tight">follow.ai</span>
+        <span className="text-[21px] font-bold tracking-tight">léa.ai</span>
       </Link>
 
       <div className="mb-5 flex items-center gap-3 rounded-2xl px-2 py-1" data-testid="lea-card">

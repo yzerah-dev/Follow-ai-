@@ -186,7 +186,7 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
            estimated_value_ht numeric, priority int, recommended_action text, suggested_date date, data_sources jsonb, details jsonb, dedupe_key text, expires_at timestamptz)
          on conflict (organization_id, dedupe_key) where status in ('open','in_progress')
          do update set title = excluded.title, justification = excluded.justification, confidence = excluded.confidence,
-           estimated_value_ht = excluded.estimated_value_ht, priority = excluded.priority, details = excluded.details,
+           estimated_value_ht = excluded.estimated_value_ht, priority = excluded.priority, details = opportunities.details || excluded.details,
            suggested_date = excluded.suggested_date, expires_at = excluded.expires_at, run_id = excluded.run_id, computed_at = now()
          returning (xmax = 0) as inserted`,
         [organizationId, JSON.stringify(batch), runId],

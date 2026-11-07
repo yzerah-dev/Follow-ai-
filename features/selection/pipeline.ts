@@ -128,11 +128,20 @@ export async function selectForCustomer(db: Db, orgId: string, customerId: strin
   lap("co-achats");
 
   // 5. Nouveautés dans les catégories du client ; 7. retours en stock
+  // Nombre de nouveautés proportionné à la taille du client (5, 20, 50 ou 100), et classement PERSONNALISÉ :
+  // part de la catégorie dans ses achats, marques qu'il travaille déjà, puis fraîcheur — pas le même ordre pour tous les clients.
+  const newsMax = opts.newProductsMax ?? (bought.length < 20 ? 5 : bought.length < 100 ? 20 : bought.length < 300 ? 50 : 100);
+  const brands = include.new_product && bought.length
+    ? (await db.query<{ brand: string }>(`select distinct brand from products where organization_id = $1 and id = any($2::uuid[]) and brand is not null`, [orgId, bought])).rows.map((r) => r.brand)
+    : [];
+  const catShare = Object.fromEntries(cats.map((c) => [c.category, Number(c.share)]));
   const news = include.new_product && strongCats.length
     ? (await db.query<{ id: string }>(
-        `select id from products where organization_id = $1 and is_new and status = 'active' and category = any($2::text[]) and availability <> 'out_of_stock'
-           and (launched_at is null or launched_at >= $3::date - 120) and not (id = any($4::uuid[]))
-         order by launched_at desc nulls last, reference limit $5`, [orgId, strongCats, today, bought, opts.newProductsMax ?? 40])).rows.map((r) => r.id)
+        `select p.id from products p
+         where p.organization_id = $1 and p.is_new and p.status = 'active' and p.category = any($2::text[]) and p.availability <> 'out_of_stock'
+           and (p.launched_at is null or p.launched_at >= $3::date - 120) and not (p.id = any($4::uuid[]))
+         order by coalesce(($6::jsonb ->> p.category)::numeric, 0) desc, (p.brand = any($7::text[])) desc, p.launched_at desc nulls last, p.reference
+         limit $5`, [orgId, strongCats, today, bought, newsMax, JSON.stringify(catShare), brands])).rows.map((r) => r.id)
     : [];
   const restocked = new Set(include.back_in_stock && bought.length
     ? (await db.query<{ product_id: string }>(

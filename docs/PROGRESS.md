@@ -1,6 +1,21 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-08 — LÉA Sales Academy v1.0 (training/)._
+_Mise à jour : 2026-11-08 — V4 « cerveau commercial & performance » (audit : docs/AUDIT_V4.md)._
+
+## V4 — Cerveau commercial & performance (2026-11-08)
+- Marque : **LÉA.AI** (anciennement Follow.AI) dans l'interface et les documents.
+- Objectifs entreprise / portefeuille / client (`features/targets/`) : annuel, mensuels saisis ou répartis (saisonnalité N-1 si ≥ 10 mois
+  d'historique, sinon parts égales), réalisé, cumul, attendu à date, écart, % d'atteinte, N-1, évolution, prévision (projection étiquetée).
+  Fiche client : tableau mensuel + saisie + répartition ; Paramètres : objectifs entreprise et portefeuilles (direction uniquement).
+- Retard d'objectif : causes analysées (catégories en recul vs N-1, références abandonnées, rendez-vous ancien — faits confirmés),
+  offre de développement (moteur de sélection), tâche de rendez-vous, plan au commercial.
+- Dormants : seuil relatif au cycle du client (2,5 × fréquence, ≥ 21 j) ; dossier complet (réassort + nouveautés + compléments +
+  catalogue) et calendrier de suivi (J+14, J+30).
+- Nouveautés : nombre proportionné à la taille du client (5 / 20 / 50 / 100), classement personnalisé (catégories, marques).
+- Compte rendu quotidien historisé et idempotent ; accueil : objectifs (annuel, mois, écart, prévision, CA attribuable) + 6 blocs
+  d'actions + décisions à valider. Catalogue personnalisé depuis la fiche client.
+- Non implémenté : SMS, téléphone IA, LinkedIn (connecteurs à choisir) ; voir docs/AUDIT_V4.md.
+
 
 ## LÉA Sales Academy v1.0 (2026-11-08)
 - Formation intégrale : `training/LEA_COMMERCIAL_ACADEMY.md` (source de référence, correspondance modules → code).
@@ -133,8 +148,8 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 117/117 (dont 105 scénarios Academy) |
-| `npm run test:integration` (PostgreSQL 16) | ✅ 66/66 (dont négociation, grands catalogues, 20 RLS) |
+| `npm run test` | ✅ 125/125 (dont 105 scénarios Academy) |
+| `npm run test:integration` (PostgreSQL 16) | ✅ 72/72 (dont V4 objectifs/compte rendu, négociation, grands catalogues, RLS) |
 | `npm run perf` (20 000 produits, 500 000 lignes) | ✅ 27/27 budgets respectés — voir docs/PERFORMANCE.md |
 | `npm run build` | ✅ |
 | `npm run e2e` (Playwright, Chromium) | ✅ 6/6 (dont grand catalogue : éditeur, sauvegarde automatique, génération asynchrone) |

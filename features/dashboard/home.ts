@@ -6,6 +6,7 @@ import type { Db } from "@/lib/database/client";
 import { dec, round2, D } from "@/lib/money";
 import { lastMonths } from "@/features/invoices/analytics";
 import { MISSION_OF } from "@/features/opportunities/missions";
+import { loadDailyBrief } from "./daily-brief";
 
 export type HomePriority = {
   id: string;
@@ -124,7 +125,10 @@ export async function getHomeData(db: Db, orgId: string, today: string) {
 
   const settings = (await db.query<{ paused: boolean }>(`select autonomy_paused as paused from organization_settings where organization_id = $1`, [orgId])).rows[0];
 
+  const brief = await loadDailyBrief(db, orgId, today);
+
   return {
+    brief,
     leaPaused: settings?.paused ?? false,
     caMonth,
     caPct,

@@ -18,6 +18,8 @@ import { createOfferFromOpportunityAction } from "@/app/actions/commercial";
 import { OfferBuilderForm } from "@/components/app/offer-builder-form";
 import { GrowthSection } from "./growth-section";
 import { CoverageSection } from "./coverage-section";
+import { ObjectivesSection } from "./objectives-section";
+import { loadCustomerObjectives } from "@/features/targets/repo";
 import { loadCustomerCoverage } from "@/features/analytics/coverage-repo";
 
 const CERTAINTY: Record<string, { label: string; tone: "success" | "info" | "warning" }> = {
@@ -29,9 +31,13 @@ const CERTAINTY: Record<string, { label: string; tone: "success" | "info" | "war
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const { data, ctx, coverage } = await db(async (d, ctx) => {
+  const { data, ctx, coverage, objectives } = await db(async (d, ctx) => {
     const data = await getCustomer(d, ctx.org.organizationId, id, toIsoDate(new Date()));
-    return { data, ctx, coverage: data ? (await loadCustomerCoverage(d, ctx.org.organizationId, id, toIsoDate(new Date()))).rows : [] };
+    return {
+      data, ctx,
+      coverage: data ? (await loadCustomerCoverage(d, ctx.org.organizationId, id, toIsoDate(new Date()))).rows : [],
+      objectives: data ? await loadCustomerObjectives(d, ctx.org.organizationId, id, toIsoDate(new Date())) : null,
+    };
   });
   if (!data) notFound();
   const { customer: c, summary: s } = data;
@@ -87,6 +93,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <Stat label="Panier moyen HT" value={s.avgBasket ? formatMoney(s.avgBasket, "EUR", { compact: true }) : "—"} hint={s.trendPct !== null ? `Tendance 90 j : ${s.trendPct > 0 ? "+" : ""}${s.trendPct.toLocaleString("fr-FR")} %` : undefined} />
       </div>
 
+      {objectives ? <div className="mb-5"><ObjectivesSection customerId={c.id} rows={objectives.rows} summary={objectives.summary} writable={writable} hasAnnual={data.growth.targets.some((t) => t.progress.periodType === "year")} /></div> : null}
       <div className="mb-5"><CoverageSection customerId={c.id} rows={coverage} /></div>
       <GrowthSection customerId={c.id} growth={data.growth} writable={writable} revenue12m={s.revenue12m} doNotSolicit={c.do_not_solicit} pausedUntil={c.solicit_paused_until} />
 

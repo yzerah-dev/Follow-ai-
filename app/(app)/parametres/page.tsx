@@ -3,7 +3,7 @@ import { Upload } from "lucide-react";
 import { db } from "@/lib/auth/context";
 import { isAdmin, ROLE_LABEL, type MemberRole } from "@/lib/auth/roles";
 import { getLlm } from "@/lib/ai";
-import { formatRelative } from "@/lib/utils";
+import { formatRelative, toIsoDate } from "@/lib/utils";
 import { dec } from "@/lib/money";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,8 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { SettingsForm } from "./settings-form";
 import { AutonomyForm } from "./autonomy-form";
 import { VoiceForm } from "./voice-form";
+import { SalesTargetsForm } from "./sales-targets-form";
+import { loadOrgObjectives } from "@/features/targets/repo";
 import { parseVoice } from "@/features/agent/voice";
 import { ActionButton } from "@/components/app/action-button";
 import { setAutonomyPausedAction, declareExistingConsentAction } from "@/app/actions/commercial";
@@ -34,7 +36,9 @@ export default async function SettingsPage() {
            where a.organization_id = $1 order by a.id desc limit 15`, [ctx.org.organizationId])).rows
       : [];
     const suppressions = (await d.query<{ n: number }>(`select count(*)::int n from suppression_entries where organization_id = $1`, [ctx.org.organizationId])).rows[0]!.n;
-    return { data: { s, members, usage, templates, audit, suppressions }, ctx };
+    const objectives = await loadOrgObjectives(d, ctx.org.organizationId, toIsoDate(new Date()));
+    const commercials = (await d.query<{ user_id: string; display_name: string | null }>(`select user_id, display_name from organization_members where organization_id = $1 and status = 'active' and role in ('owner','admin','manager','commercial') order by display_name`, [ctx.org.organizationId])).rows;
+    return { data: { s, members, usage, templates, audit, suppressions, objectives, commercials }, ctx };
   });
   const admin = isAdmin(ctx.org.role);
   const llm = getLlm();
@@ -80,6 +84,23 @@ export default async function SettingsPage() {
               maxFollowups: data.s.max_followups,
               maxDiscountPct: dec(data.s.max_auto_discount_pct).toString(),
             }}
+          />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-5" id="objectifs">
+        <CardHeader>
+          <CardTitle>Objectifs de chiffre d&apos;affaires {data.objectives.year}</CardTitle>
+          <span className="text-[12px] text-faint">Fixés par la direction ; LÉA les suit chaque jour (objectifs clients sur chaque fiche client)</span>
+        </CardHeader>
+        <CardContent>
+          <SalesTargetsForm
+            readOnly={!canManage(ctx.org.role)}
+            company={{ annual: data.objectives.company.summary.annualTargetHt, explicit: data.objectives.company.explicit, realized: data.objectives.company.summary.realizedYtdHt }}
+            owners={data.commercials.map((m) => {
+              const p = data.objectives.portfolios.find((x) => x.ownerUserId === m.user_id);
+              return { userId: m.user_id, name: m.display_name ?? "Commercial", annual: p?.summary.annualTargetHt ?? null, explicit: p?.explicit ?? false, realized: p?.summary.realizedYtdHt ?? "0" };
+            })}
           />
         </CardContent>
       </Card>

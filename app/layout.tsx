@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Follow.AI", template: "%s · Follow.AI" },
+  title: { default: "LÉA.AI", template: "%s · LÉA.AI" },
   description: "Votre équipe commerciale augmentée par l'intelligence artificielle.",
   robots: { index: false, follow: false },
 };

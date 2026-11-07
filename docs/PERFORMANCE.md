@@ -11,33 +11,36 @@ Jeu de charge (`scripts/perf/seed-large.ts`) : **20 000 produits**, **5 000 
 
 | Opération | Volume | Temps | Budget | Mémoire de l'opération (tas) | Pic RSS du processus | Erreurs | Détail |
 |---|---|---:|---:|---:|---:|---:|---|
-| Analyse des opportunités (organisation entière) | 5000 clients · 591500 lignes | 22 131 ms | 60 000 ms | 1009 Mo | 1190 Mo | 0 | 17730 opportunités |
-| Sélection — 20 grands comptes (total) | 20 clients | 2 020 ms | 40 000 ms | 24 Mo | 981 Mo | 0 | moyenne 101 ms · p95 120 ms · 177 lignes/client |
-| Sélection — 20 magasins (total) | 20 clients | 611 ms | 40 000 ms | 13 Mo | 968 Mo | 0 | moyenne 31 ms · p95 34 ms · 101 lignes/client |
-| Offre complète par le moteur (grand compte) | jusqu'à 500 lignes | 127 ms | 3 000 ms | 10 Mo | 971 Mo | 0 | 135 lignes |
-| Couverture de stock (grand compte) | 400 références | 52 ms | 2 000 ms | 2 Mo | 967 Mo | 0 | 210 références |
-| Création d'une offre de 200 lignes | 200 lignes | 42 ms | 2 000 ms | 3 Mo | 967 Mo | 0 | 200 lignes · 65783.28 € HT |
-| Éditeur — chargement (200 lignes) | 200 lignes | 8 ms | 1 500 ms | 0 Mo | 967 Mo | 0 | 200 lignes |
-| Éditeur — modification en masse (200 lignes) | 200 changements | 46 ms | 2 000 ms | 4 Mo | 967 Mo | 0 | 200 modifications · révision 2 |
-| Génération asynchrone offer_excel (200 lignes) | 200 lignes | 231 ms | 20 000 ms | 17 Mo | 975 Mo | 0 | Offre-OF-2026-00003.xlsx 0.0 Mo |
-| Génération asynchrone offer_pdf (200 lignes) | 200 lignes | 328 ms | 20 000 ms | 17 Mo | 971 Mo | 0 | Offre-OF-2026-00003.pdf 0.1 Mo |
-| Génération asynchrone catalog (200 lignes) | 200 lignes | 244 ms | 20 000 ms | 8 Mo | 970 Mo | 0 | Catalogue-OF-2026-00003.pdf 0.1 Mo |
-| Génération asynchrone synthesis_pdf + priority_pdf + email_txt (200 lignes) | 200 lignes | 372 ms | 20 000 ms | 9 Mo | 970 Mo | 0 | Synthese-OF-2026-00003.pdf 0.0 Mo, Selection-prioritaire-OF-2026-00003.pdf 0.0 Mo, Email-OF-2026-00003.txt 0.0 Mo |
-| Génération asynchrone coverage_excel (200 lignes) | 200 lignes | 159 ms | 20 000 ms | 6 Mo | 972 Mo | 0 | Analyse-OF-2026-00003.xlsx 0.0 Mo |
-| Création d'une offre de 500 lignes | 500 lignes | 64 ms | 5 000 ms | 8 Mo | 970 Mo | 0 | 500 lignes · 175732.26 € HT |
-| Éditeur — chargement (500 lignes) | 500 lignes | 11 ms | 1 500 ms | 1 Mo | 970 Mo | 0 | 500 lignes |
-| Éditeur — modification en masse (500 lignes) | 500 changements | 88 ms | 5 000 ms | 9 Mo | 971 Mo | 0 | 500 modifications · révision 2 |
-| Génération asynchrone offer_excel (500 lignes) | 500 lignes | 263 ms | 50 000 ms | 30 Mo | 986 Mo | 0 | Offre-OF-2026-00004.xlsx 0.1 Mo |
-| Génération asynchrone offer_pdf (500 lignes) | 500 lignes | 495 ms | 50 000 ms | 22 Mo | 980 Mo | 0 | Offre-OF-2026-00004.pdf 0.2 Mo |
-| Génération asynchrone catalog (500 lignes) | 500 lignes | 349 ms | 50 000 ms | 18 Mo | 990 Mo | 0 | Catalogue-OF-2026-00004.pdf 0.2 Mo |
-| Liste produits — recherche + page de 50 | 20 000 produits | 26 ms | 500 ms | 0 Mo | 990 Mo | 0 | 50 résultats |
-| Écran Clients — page 1 (tri par CA 12 mois) | 5 000 clients | 69 ms | 1 500 ms | 0 Mo | 990 Mo | 0 | 25 / 5000 clients |
-| Écran Clients — recherche | 5 000 clients | 144 ms | 1 000 ms | 0 Mo | 990 Mo | 0 | 109 résultats |
-| Écran Accueil (indicateurs, évolution, répartition) | 591500 lignes | 2 055 ms | 3 000 ms | 1 Mo | 1003 Mo | 0 | ok |
-| Écran Actions (tableau de bord) | organisation | 80 ms | 2 000 ms | 0 Mo | 1003 Mo | 0 | ok |
-| Écran Opportunités (liste triée) | 13 500 opportunités | 60 ms | 1 000 ms | 0 Mo | 1003 Mo | 0 | 200 affichées |
-| Écran Rapports (résultats par mission, 90 j) | organisation | 81 ms | 3 000 ms | 12 Mo | 1005 Mo | 0 | ok |
-| Fiche client — grand compte (habitudes, missions) | ~1 200 lignes | 65 ms | 2 000 ms | 11 Mo | 1003 Mo | 0 | chargée |
+| Analyse des opportunités (organisation entière) | 5000 clients · 591500 lignes | 19 915 ms | 60 000 ms | 1017 Mo | 1216 Mo | 0 | 17729 opportunités |
+| Sélection — 20 grands comptes (total) | 20 clients | 1 985 ms | 40 000 ms | 24 Mo | 1009 Mo | 0 | moyenne 99 ms · p95 142 ms · 211 lignes/client |
+| Sélection — 20 magasins (total) | 20 clients | 681 ms | 40 000 ms | 13 Mo | 1011 Mo | 0 | moyenne 34 ms · p95 49 ms · 66 lignes/client |
+| Offre complète par le moteur (grand compte) | jusqu'à 500 lignes | 142 ms | 3 000 ms | 13 Mo | 998 Mo | 0 | 213 lignes |
+| Couverture de stock (grand compte) | 400 références | 38 ms | 2 000 ms | 2 Mo | 998 Mo | 0 | 210 références |
+| Création d'une offre de 200 lignes | 200 lignes | 36 ms | 2 000 ms | 3 Mo | 998 Mo | 0 | 200 lignes · 65783.28 € HT |
+| Éditeur — chargement (200 lignes) | 200 lignes | 5 ms | 1 500 ms | 0 Mo | 998 Mo | 0 | 200 lignes |
+| Éditeur — modification en masse (200 lignes) | 200 changements | 43 ms | 2 000 ms | 4 Mo | 998 Mo | 0 | 200 modifications · révision 2 |
+| Génération asynchrone offer_excel (200 lignes) | 200 lignes | 186 ms | 20 000 ms | 17 Mo | 1003 Mo | 0 | Offre-OF-2026-00002.xlsx 0.0 Mo |
+| Génération asynchrone offer_pdf (200 lignes) | 200 lignes | 327 ms | 20 000 ms | 17 Mo | 1000 Mo | 0 | Offre-OF-2026-00002.pdf 0.1 Mo |
+| Génération asynchrone catalog (200 lignes) | 200 lignes | 258 ms | 20 000 ms | 8 Mo | 1001 Mo | 0 | Catalogue-OF-2026-00002.pdf 0.1 Mo |
+| Génération asynchrone synthesis_pdf + priority_pdf + email_txt (200 lignes) | 200 lignes | 335 ms | 20 000 ms | 10 Mo | 1001 Mo | 0 | Synthese-OF-2026-00002.pdf 0.0 Mo, Selection-prioritaire-OF-2026-00002.pdf 0.0 Mo, Email-OF-2026-00002.txt 0.0 Mo |
+| Génération asynchrone coverage_excel (200 lignes) | 200 lignes | 141 ms | 20 000 ms | 5 Mo | 1002 Mo | 0 | Analyse-OF-2026-00002.xlsx 0.0 Mo |
+| Création d'une offre de 500 lignes | 500 lignes | 54 ms | 5 000 ms | 8 Mo | 1002 Mo | 0 | 500 lignes · 175732.26 € HT |
+| Éditeur — chargement (500 lignes) | 500 lignes | 10 ms | 1 500 ms | 1 Mo | 1002 Mo | 0 | 500 lignes |
+| Éditeur — modification en masse (500 lignes) | 500 changements | 65 ms | 5 000 ms | 9 Mo | 1002 Mo | 0 | 500 modifications · révision 2 |
+| Génération asynchrone offer_excel (500 lignes) | 500 lignes | 249 ms | 50 000 ms | 30 Mo | 1015 Mo | 0 | Offre-OF-2026-00003.xlsx 0.1 Mo |
+| Génération asynchrone offer_pdf (500 lignes) | 500 lignes | 372 ms | 50 000 ms | 21 Mo | 1008 Mo | 0 | Offre-OF-2026-00003.pdf 0.2 Mo |
+| Génération asynchrone catalog (500 lignes) | 500 lignes | 342 ms | 50 000 ms | 18 Mo | 1017 Mo | 0 | Catalogue-OF-2026-00003.pdf 0.2 Mo |
+| Liste produits — recherche + page de 50 | 20 000 produits | 22 ms | 500 ms | 0 Mo | 1017 Mo | 0 | 50 résultats |
+| Écran Clients — page 1 (tri par CA 12 mois) | 5 000 clients | 72 ms | 1 500 ms | 0 Mo | 1017 Mo | 0 | 25 / 5000 clients |
+| Écran Clients — recherche | 5 000 clients | 196 ms | 1 000 ms | 0 Mo | 1017 Mo | 0 | 109 résultats |
+| Écran Accueil (indicateurs, évolution, répartition) | 591500 lignes | 1 446 ms | 3 000 ms | 13 Mo | 1019 Mo | 0 | ok |
+| Écran Actions (tableau de bord) | organisation | 117 ms | 2 000 ms | 0 Mo | 1017 Mo | 0 | ok |
+| Écran Opportunités (liste triée) | 13 500 opportunités | 84 ms | 1 000 ms | 0 Mo | 1017 Mo | 0 | 200 affichées |
+| Écran Rapports (résultats par mission, 90 j) | organisation | 44 ms | 3 000 ms | 12 Mo | 1019 Mo | 0 | ok |
+| Objectifs entreprise + portefeuilles (mensuel, N-1) | 591500 lignes | 48 ms | 2 000 ms | 0 Mo | 1017 Mo | 0 | 0 portefeuille(s) |
+| Compte rendu quotidien de LÉA | organisation | 206 ms | 3 000 ms | 12 Mo | 1019 Mo | 0 | 4805 réassorts · 0 dormants · 4483 nouveautés |
+| Objectifs d'un client (tableau mensuel) | grand compte | 7 ms | 500 ms | 0 Mo | 1017 Mo | 0 | 12 mois |
+| Fiche client — grand compte (habitudes, missions) | ~1 200 lignes | 56 ms | 2 000 ms | 11 Mo | 1017 Mo | 0 | chargée |
 
 Résultat : **tous les budgets sont respectés, aucune erreur.**
 

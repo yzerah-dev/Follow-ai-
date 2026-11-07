@@ -13,7 +13,7 @@ const TENANT_TABLES = [
   "invoice_lines", "campaigns", "campaign_products", "opportunities", "offers", "offer_lines", "conversations", "messages",
   "communication_connections", "agent_memory", "agent_runs", "agent_decisions", "creative_templates", "organization_settings",
   "organization_members", "approvals", "followup_tasks", "generated_assets", "imports", "suppression_entries", "customer_targets",
-  "customer_stock_reports", "offer_line_changes",
+  "customer_stock_reports", "offer_line_changes", "sales_targets", "daily_briefs",
 ];
 
 beforeAll(async () => {

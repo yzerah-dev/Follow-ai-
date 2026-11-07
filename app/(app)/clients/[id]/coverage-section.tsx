@@ -16,9 +16,14 @@ export function CoverageSection({ customerId, rows }: { customerId: string; rows
           <CardTitle>Couverture de stock</CardTitle>
           <p className="mt-0.5 text-[12px] text-faint">Estimée à partir des achats du client, sauf stock ou sorties caisse déclarés. « Inconnu » ≠ 0.</p>
         </div>
-        <a href={`/api/customers/${customerId}/coverage`} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium hover:bg-muted">
-          <Download className="size-4" /> Excel illustré
-        </a>
+        <span className="flex flex-wrap gap-2">
+          <a href={`/api/customers/${customerId}/catalog`} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium hover:bg-muted">
+            <Download className="size-4" /> Catalogue personnalisé
+          </a>
+          <a href={`/api/customers/${customerId}/coverage`} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium hover:bg-muted">
+            <Download className="size-4" /> Excel illustré
+          </a>
+        </span>
       </CardHeader>
       <CardContent className="overflow-x-auto px-0">
         {rows.length === 0 ? <p className="px-5 py-4 text-[13px] text-subtle">Aucun achat sur 12 mois.</p> : (

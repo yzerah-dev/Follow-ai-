@@ -1,9 +1,12 @@
-# CLAUDE.md — règles permanentes du projet Follow.AI
+# CLAUDE.md — règles permanentes du projet LÉA.AI (anciennement Follow.AI)
 
 Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'architecture) avant toute modification.
 
 ## Produit
-- SaaS B2B multi-tenant, interface en **français** (prévoir l'i18n), agent commercial **LÉA**.
+- **LÉA.AI** (anciennement Follow.AI) : SaaS B2B multi-tenant, interface en **français** (prévoir l'i18n), commerciale IA **LÉA**.
+- Mission absolue de LÉA : atteindre et dépasser les objectifs de CA du portefeuille. Chaque jour (autopilote + cron) elle
+  analyse, prépare offres/documents/messages, demande les validations nécessaires et écrit le compte rendu du jour (`daily_briefs`,
+  idempotent) affiché à l'accueil : « Voici ce que LÉA a préparé aujourd'hui pour développer votre chiffre d'affaires. »
 - Navigation : Accueil, Clients, Factures, Produits, Offres, Conversations ; en bas Connexions, Paramètres. LÉA accessible partout (panneau latéral).
 - UX ultra-simple : pas de faux boutons, pas de page vide présentée comme fonctionnelle, pas de métrique fictive.
 
@@ -20,6 +23,7 @@ Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'ar
    (remise au-delà du plafond, concurrence, question ouverte, identité douteuse, contenu suspect, garde-fou, montant > plafond,
    relance au-delà du max) passe par `approvals`. L'agent peut demander une approbation, jamais la décider (RLS) ; il ne peut pas
    modifier son niveau d'autonomie. Interrupteur `autonomy_paused` (managers). JONAS : autonome, remise ≤ 1 % sans validation (décision du 2026-11-07, confirmée le 2026-11-08 : pas de validation humaine obligatoire des envois en V1).
+   Les nouvelles organisations sont **supervisées par défaut** (toute sortie validée par un humain) — conforme à la règle V1 du prompt maître V4.
 6. **Envois** : tout envoi passe par `dispatchMessage()` (`features/conversations/dispatch.ts`) : liste d'opposition, consentement,
    connexion utilisable ; envois autonomes limités à la plage horaire et au quota (sinon programmés). Aucun envoi réel sans connecteur
    réel configuré : activer un connecteur réel = activer des envois réels → approbation explicite du client requise.
@@ -28,6 +32,14 @@ Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'ar
    sinon modèle approuvé (`features/conversations/templates.ts`, variables remplies par le système, jamais par l'IA).
 11. **Discussion** : LÉA répond à partir de l'historique de la conversation et des faits vérifiés (`features/agent/answers.ts`) ;
    ce qui n'a pas de donnée fiable (ex. délai de livraison) est annoncé comme « vérifié par le commercial » + tâche `reply`.
+13. **Objectifs** (`features/targets/`) : entreprise, portefeuille, client ; annuels et mensuels (saisis, ou répartis selon la
+   saisonnalité N-1 si l'historique couvre au moins 10 mois, sinon à parts égales — toujours étiquetés). Réalisé comparé au même
+   périmètre que l'objectif. Objectifs fixés par des humains uniquement (RLS). Données confirmées / estimations / manquantes distinguées.
+14. **Grands volumes** : jamais le catalogue dans un prompt ; sélection SQL (`features/selection/`), traitements par lots, pagination /
+   virtualisation ; politiques RLS sous forme `organization_id = any ((select app.readable_orgs())::uuid[])` (évaluées une fois par requête).
+   Toute mesure de performance vient de `npm run perf` (jeu `npm run perf:seed`) ; ne jamais annoncer un volume non mesuré.
+15. **Formation** : `training/LEA_COMMERCIAL_ACADEMY.md` + `lib/ai/lea-*.ts` (prompt versionné `LEA_PROMPT_VERSION`) ; toute modification
+   du comportement commercial doit garder `tests/unit/academy.test.ts` vert (105 scénarios ≥ 90/100, aucune erreur critique).
 12. **6 missions** (`features/opportunities/engine.ts` + `missions.ts`) : réactivation, permanents, complémentaires & retours en stock,
    nouveautés, rendez-vous, objectifs de CA. Calculs déterministes, scoring potentiel × urgence × probabilité, « À confirmer » si donnée
    manquante. Respect des refus (`solicit_paused_until`, `do_not_solicit`), préférence de canal, une sollicitation proactive par client

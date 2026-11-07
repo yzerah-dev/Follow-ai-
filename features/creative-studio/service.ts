@@ -39,7 +39,7 @@ async function loadBrand(db: Db, orgId: string, kind: TemplateKind) {
     primaryColor: s.brand.primaryColor ?? def.primaryColor,
     secondaryColor: def.secondaryColor,
     accentColor: def.accentColor,
-    footerText: def.footerText || "Document généré par Follow.AI — prix HT en euros.",
+    footerText: def.footerText || "Document généré par LÉA.AI — prix HT en euros.",
     isDemo: s.is_demo,
   };
   return { brand, template: def, templateId: tpl?.id ?? null, templateVersion: tpl?.version ?? null };
@@ -253,4 +253,20 @@ export async function buildCustomerCoverageExcel(db: Db, orgId: string, customer
   for (const r of all) rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: images.get(r.productId) ?? null });
   const data = await generateCoverageExcel({ customerName: cov.customerName, date: today, offerNumber: null, rows, complementary: cov.complementary, news: cov.news, hypotheses: [...new Set(cov.rows.flatMap((r) => r.hypotheses))] }, b.brand);
   return { filename: `Analyse-couverture-${cov.customerName.replace(/[^A-Za-z0-9-]+/g, "-").slice(0, 40)}-${today}.xlsx`, data };
+}
+
+/**
+ * Catalogue personnalisé d'un client (PDF), à la demande depuis la fiche client : sélection du moteur (réassorts, permanents,
+ * nouveautés adaptées, compléments), photos issues des médias autorisés, prix vérifiés. Aucune donnée inventée.
+ */
+export async function buildCustomerCatalog(db: Db, orgId: string, customerId: string, today: string) {
+  const { selectForCustomer } = await import("@/features/selection/pipeline");
+  const s = await selectForCustomer(db, orgId, customerId, today, { maxLines: 120 });
+  if (!s.lines.length) throw new Error("Aucune référence à présenter pour l'instant.");
+  const b = await loadBrand(db, orgId, "catalog");
+  const docs = await loadProductDocs(db, s.lines.map((l) => l.productId));
+  const price = new Map(s.lines.map((l) => [l.reference, l.unitPriceHt]));
+  const ordered = s.lines.map((l) => docs.find((d) => d.reference === l.reference)).filter((d): d is ProductDocData => !!d).map((d) => ({ ...d, priceHt: price.get(d.reference) ?? d.priceHt }));
+  const data = await generateCatalog(`Sélection pour ${s.customerName}`, ordered, b.brand, b.template.columns);
+  return { filename: `Catalogue-${s.customerName.replace(/[^A-Za-z0-9-]+/g, "-").slice(0, 40)}-${today}.pdf`, data, lines: s.lines.length };
 }

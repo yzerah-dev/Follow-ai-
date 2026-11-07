@@ -19,8 +19,8 @@ export type Ctx = { doc: PDFDocument; font: PDFFont; bold: PDFFont; brand: Brand
 export async function createDoc(brand: Brand, title: string): Promise<Ctx> {
   const doc = await PDFDocument.create();
   doc.setTitle(title);
-  doc.setCreator("Follow.AI — Studio créatif");
-  doc.setProducer("Follow.AI");
+  doc.setCreator("LÉA.AI — Studio créatif");
+  doc.setProducer("LÉA.AI");
   doc.setCreationDate(new Date());
   return { doc, font: await doc.embedFont(StandardFonts.Helvetica), bold: await doc.embedFont(StandardFonts.HelveticaBold), brand };
 }

@@ -14,7 +14,7 @@ export default async function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="mb-10 flex items-center gap-2.5">
             <div className="lea-gradient flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold text-white">F</div>
-            <span className="text-lg font-semibold tracking-tight">Follow.AI</span>
+            <span className="text-lg font-semibold tracking-tight">LÉA.AI</span>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Bon retour</h1>
           <p className="mt-1.5 text-sm text-subtle">Connectez-vous pour retrouver le travail préparé par LÉA.</p>

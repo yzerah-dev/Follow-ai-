@@ -4,17 +4,17 @@ import { formatMoney } from "@/lib/money";
 import { createOfferDraft, OfferNotBuildable, type OfferActor } from "@/features/offers/service";
 import { selectForCustomer, RECOMMENDATION_LABEL, type SelectionOptions, type Selection } from "./pipeline";
 
-export async function createOfferFromSelection(db: Db, orgId: string, actor: OfferActor | null, customerId: string, today: string, opts: SelectionOptions & { autoApprove?: { reason: string; maxTotalHt?: string | null } } = {}) {
+export async function createOfferFromSelection(db: Db, orgId: string, actor: OfferActor | null, customerId: string, today: string, opts: SelectionOptions & { autoApprove?: { reason: string; maxTotalHt?: string | null }; opportunityId?: string | null; extraArguments?: string[] } = {}) {
   const selection = await selectForCustomer(db, orgId, customerId, today, opts);
   if (!selection.lines.length) throw new OfferNotBuildable("Aucune référence à proposer pour l'instant : couverture suffisante ou données insuffisantes.");
   const summary = summarizeSelection(selection);
   const res = await createOfferDraft(db, orgId, actor, {
-    customerId, source: actor ? "manual" : "lea", today, autoApprove: opts.autoApprove,
+    customerId, source: actor ? "manual" : opts.opportunityId ? "opportunity" : "lea", today, autoApprove: opts.autoApprove, opportunityId: opts.opportunityId ?? null,
     items: selection.lines.map((l) => ({
       productId: l.productId, suggestedQty: l.quantity, rationale: l.justification,
       meta: { recommendationType: l.type, confidence: l.confidence, purchaseCount: l.purchaseCount, lastOrderDate: l.lastOrderDate, historyQty: l.historyQty },
     })),
-    arguments: summary,
+    arguments: [...(opts.extraArguments ?? []), ...summary],
   });
   return { ...res, selection };
 }

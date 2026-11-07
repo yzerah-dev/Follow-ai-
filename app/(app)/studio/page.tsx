@@ -90,7 +90,7 @@ export default async function StudioPage() {
               <CardTitle>Modèles de marque</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5 px-5 pb-4">
-              {templates.length === 0 ? <p className="text-[13px] text-subtle">Modèles par défaut de Follow.AI.</p> : null}
+              {templates.length === 0 ? <p className="text-[13px] text-subtle">Modèles par défaut de LÉA.AI.</p> : null}
               {templates.map((t) => (
                 <p key={t.id} className="flex items-center justify-between gap-2 text-[13px]">
                   <span className="truncate">{t.name}</span>

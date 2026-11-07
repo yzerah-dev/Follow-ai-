@@ -40,3 +40,8 @@
 | D36 | Évaluateur déterministe (règles explicites) | Reproductible, gratuit, utilisable en régression ; complété plus tard par une revue humaine / un juge IA si souhaité |
 | D37 | Garde-fous « délai non confirmé » et « montant non vérifié » en production | Les tests adverses ont montré qu'un modèle réel pourrait inventer une date ou un prix sans être bloqué |
 | D38 | « Pas besoin » : aucune offre envoyée d'office | Éviter la pression commerciale excessive ; un point chiffré et un rendez-vous court suffisent |
+| D39 | Saisonnalité N-1 seulement si ≥ 10 mois d'historique, sinon parts égales | Un historique partiel concentrait l'objectif annuel sur un seul mois (constaté en recette) |
+| D40 | Objectif entreprise non saisi = somme des objectifs clients, comparée au CA de ces mêmes clients | Comparer au CA de tous les clients faussait l'atteinte (153 % constaté en recette) |
+| D41 | Dormance relative au cycle du client (2,5 × fréquence, ≥ 21 j) | Un seuil fixe de 120 j ne détectait pas les clients hebdomadaires inactifs depuis 2 mois |
+| D42 | Compte rendu quotidien persistant (`daily_briefs`, une ligne par jour) | Historisation et idempotence de la tournée ; l'accueil affiche le compte rendu, ou un calcul « à l'instant » s'il manque |
+| D43 | Validation humaine V1 : par défaut pour toute nouvelle organisation, JONAS reste autonome | Respect de la décision explicite du client (2026-11-08) et de la règle V1 du prompt maître pour les autres |

@@ -116,6 +116,11 @@ await measure("Écran Accueil (indicateurs, évolution, répartition)", `${volum
 await measure("Écran Actions (tableau de bord)", "organisation", 2_000, () => ag((db) => getDashboard(db, org, TODAY)), () => "ok");
 await measure("Écran Opportunités (liste triée)", "13 500 opportunités", 1_000, () => ag((db) => listOpportunities(db, org, {})), (r) => `${r.length} affichées`);
 await measure("Écran Rapports (résultats par mission, 90 j)", "organisation", 3_000, () => ag((db) => getLeaPerformance(db, org, 90)), () => "ok");
+const { loadOrgObjectives, loadCustomerObjectives } = await import("../../features/targets/repo");
+const { buildDailyBrief } = await import("../../features/dashboard/daily-brief");
+await measure("Objectifs entreprise + portefeuilles (mensuel, N-1)", `${volumes.l} lignes`, 2_000, () => ag((db) => loadOrgObjectives(db, org, TODAY)), (r) => `${r.portfolios.length} portefeuille(s)`);
+await measure("Compte rendu quotidien de LÉA", "organisation", 3_000, () => ag((db) => buildDailyBrief(db, org, TODAY)), (r) => `${r.reorders.total} réassorts · ${r.dormants.total} dormants · ${r.news.total} nouveautés`);
+await measure("Objectifs d'un client (tableau mensuel)", "grand compte", 500, () => ag((db) => loadCustomerObjectives(db, org, bigs[0]!, TODAY)), () => "12 mois");
 await measure("Fiche client — grand compte (habitudes, missions)", "~1 200 lignes", 2_000, () => ag((db) => getCustomer(db, org, bigs[0]!, TODAY)), (r) => (r ? "chargée" : "absente"));
 
 clearInterval(sampler);

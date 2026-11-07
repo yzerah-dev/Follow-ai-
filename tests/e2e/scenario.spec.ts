@@ -11,6 +11,9 @@ async function login(page: Page, email: string) {
 test("scénario principal : réassort → offre → supports → email → objection → commande", async ({ page }) => {
   // 1-3. Connexion et cockpit : LÉA a identifié le réassort de Maison Martin & Fils
   await login(page, "bruno@demo.follow.ai");
+  await expect(page.getByTestId("brief-headline")).toContainText("Voici ce que LÉA a préparé aujourd'hui pour développer votre chiffre d'affaires.");
+  await expect(page.getByTestId("objectives")).toContainText("Objectif annuel");
+  await expect(page.getByTestId("brief")).toContainText("Clients en retard sur leurs objectifs");
   await expect(page.getByText("Les priorités de LÉA aujourd'hui")).toBeVisible();
   await expect(page.getByTestId("opportunity").first()).toBeVisible();
   await page.getByRole("link", { name: "Rapports" }).click();
@@ -21,14 +24,21 @@ test("scénario principal : réassort → offre → supports → email → objec
   await expect(page.getByText("Prochaine action recommandée par LÉA")).toBeVisible();
   // Couverture de stock : estimations étiquetées, Excel illustré téléchargeable
   await expect(page.getByTestId("coverage")).toContainText("Couverture de stock");
+  // Objectifs mensuels : tableau, répartition selon la saisonnalité N-1
+  await expect(page.getByTestId("objectives-table")).toContainText("suivi mensuel");
+  await page.getByRole("button", { name: "Répartir selon la saisonnalité N-1" }).click();
+  await expect(page.getByTestId("objectives-table").getByRole("status")).toContainText(/répartis|parts égales/);
+  const catalog = await page.request.get(`${page.url().replace(/\/clients\//, "/api/customers/")}/catalog`);
+  expect(catalog.status()).toBe(200);
+  expect(catalog.headers()["content-type"]).toContain("pdf");
   const xlsx = await page.request.get(`${page.url().replace(/\/clients\//, "/api/customers/")}/coverage`);
   expect(xlsx.status()).toBe(200);
   expect(xlsx.headers()["content-type"]).toContain("spreadsheetml");
   await expect(page.getByText("Réassort probable de 4 références").first()).toBeVisible();
   // Développement du client : objectif CA, produits permanents, plan
-  await expect(page.getByTestId("target")).toContainText("Objectif annuel");
-  await expect(page.getByTestId("target")).toContainText("En retard");
-  await expect(page.getByTestId("target")).toContainText("Prévision de fin de période");
+  await expect(page.getByTestId("target").first()).toContainText("Objectif annuel");
+  await expect(page.getByTestId("target").first()).toContainText("En retard");
+  await expect(page.getByTestId("target").first()).toContainText("Prévision de fin de période");
   await expect(page.getByTestId("permanent")).toHaveCount(4);
   await expect(page.getByTestId("growth-plan")).toContainText("Réalisé");
   await expect(page.getByTestId("growth-plan")).toContainText("Les leviers chiffrés couvrent");

@@ -16,6 +16,9 @@ import { generateOfferAssets, autoApproveAssets } from "@/features/creative-stud
 import { dispatchMessage } from "@/features/conversations/dispatch";
 import { loadAutonomy } from "@/features/settings/policy-repo";
 import { draftFollowup, draftMeetingProposal, draftOfferEmail } from "./lea";
+import { createOfferFromSelection } from "@/features/selection/offer";
+import { analyzeTargetGap } from "@/features/targets/gap-analysis";
+import { saveDailyBrief } from "@/features/dashboard/daily-brief";
 
 export type AutopilotReport = {
   skipped?: string;
@@ -105,16 +108,23 @@ export async function runAutopilot(db: Db, orgId: string, now = new Date()): Pro
     // Résultat compté seulement si toute l'étape a réussi (sinon savepoint annulé).
     const outcome = await step(db, "offer", async () => {
       let offer;
+      const oppType = (await db.query<{ type: string }>(`select type from opportunities where id = $1`, [c.id])).rows[0]?.type;
+      const autoApprove = supervised ? undefined : { reason: "Offre préparée et validée automatiquement par LÉA (politique respectée).", maxTotalHt: cfg.maxOfferHt };
       try {
-        offer = await createOfferFromOpportunity(db, orgId, null, c.id, today, supervised ? undefined : { reason: "Offre préparée et validée automatiquement par LÉA (politique respectée).", maxTotalHt: cfg.maxOfferHt });
+        // Client dormant : dossier de réactivation complet (réassort + nouveautés + compléments) par le moteur de sélection.
+        offer = oppType === "dormant_customer"
+          ? await createOfferFromSelection(db, orgId, null, c.customer_id, today, { opportunityId: c.id, autoApprove, extraArguments: ["Réactivation : sélection construite sur l'historique du client, ses catégories et les nouveautés adaptées."] })
+              .then((r) => ({ ...r, existing: false as const }))
+              .catch((e) => (e instanceof OfferNotBuildable ? createOfferFromOpportunity(db, orgId, null, c.id, today, autoApprove) : Promise.reject(e)))
+          : await createOfferFromOpportunity(db, orgId, null, c.id, today, autoApprove);
       } catch (e) {
         if (!(e instanceof OfferNotBuildable)) throw e;
         await db.query(`insert into agent_decisions (organization_id, customer_id, decision_type, rationale, payload) values ($1,$2,'offer_not_buildable',$3,$4)`, [orgId, c.customer_id, e.message, { opportunityId: c.id }]);
         return "not_buildable" as const;
       }
-      const isNews = (await db.query<{ type: string }>(`select type from opportunities where id = $1`, [c.id])).rows[0]?.type === "new_product";
-      // Nouveautés : catalogue personnalisé en plus de l'offre (studio créatif).
-      const kinds: ("offer_pdf" | "offer_excel" | "catalog")[] = isNews ? ["offer_pdf", "offer_excel", "catalog"] : ["offer_pdf", "offer_excel"];
+      // Nouveautés et réactivation : catalogue personnalisé en plus de l'offre (studio créatif).
+      const kinds: ("offer_pdf" | "offer_excel" | "catalog")[] = oppType === "new_product" || oppType === "dormant_customer" ? ["offer_pdf", "offer_excel", "catalog"] : ["offer_pdf", "offer_excel"];
+      if (oppType === "dormant_customer") await scheduleReactivationCalendar(db, orgId, c.customer_id, c.id, now);
       if (!offer.autoApproved) {
         if (!offer.existing) await generateOfferAssets(db, orgId, null, offer.offerId, kinds); // préparés, à valider par un humain
         return "pending_approval" as const;
@@ -148,16 +158,48 @@ export async function runAutopilot(db: Db, orgId: string, now = new Date()): Pro
     if (r) report.meetingsProposed++;
   }
 
-  // 2 ter. Objectifs de CA (mission 6) : plan d'accélération remis au commercial, leviers exécutés par LÉA ci-dessus
+  // 2 ter. Objectifs de CA (mission 6) : causes analysées, offre de développement, rendez-vous, plan remis au commercial.
   const gaps = (await db.query<{ id: string; customer_id: string; title: string; recommended_action: string; justification: string }>(
     `select id, customer_id, title, recommended_action, justification from opportunities where organization_id = $1 and status = 'open' and type = 'target_gap' order by priority desc limit 50`, [orgId])).rows;
   for (const g of gaps) {
     await step(db, "plan", async () => {
+      const analysis = await analyzeTargetGap(db, orgId, g.customer_id, today);
+      const causes = analysis.causes.map((c) => `• ${c.text} (${c.certainty})`).join("\n");
+      await db.query(`update opportunities set details = details || $2::jsonb where id = $1`, [g.id, JSON.stringify({ causes: analysis.causes, meetingNeeded: analysis.meetingNeeded })]);
+      // Offre de développement : réassorts attendus + nouveautés + compléments (moteur de sélection), dans les limites du jour.
+      let devOffer: string | null = null;
+      const openOffer = (await db.query(`select 1 from offers where customer_id = $1 and status in ('pending_approval','approved','sent','negotiation')`, [g.customer_id])).rowCount;
+      if (!openOffer && report.offersCreated < budget && !(await recentlySolicited(g.customer_id))) {
+        try {
+          const o = await createOfferFromSelection(db, orgId, null, g.customer_id, today, {
+            opportunityId: g.id, autoApprove: supervised ? undefined : { reason: "Offre de développement préparée par LÉA (retard sur objectif).", maxTotalHt: cfg.maxOfferHt },
+            extraArguments: ["Plan d'accélération : objectif de CA en retard à date.", ...analysis.causes.slice(0, 2).map((c) => c.text)],
+          });
+          devOffer = o.number;
+          report.offersCreated++;
+          await generateOfferAssets(db, orgId, null, o.offerId, ["offer_pdf", "offer_excel", "catalog"]);
+          if (o.autoApproved) {
+            await autoApproveAssets(db, orgId, o.offerId);
+            const email = await draftOfferEmail(db, orgId, o.offerId, { userId: null }, { autonomous: true, now });
+            if (email.dispatch?.status === "sent") report.emailsSent++;
+            else if (email.dispatch?.status === "scheduled") report.emailsScheduled++;
+            else report.emailsPendingApproval++;
+          } else report.offersPendingApproval++;
+        } catch (e) {
+          if (!(e instanceof OfferNotBuildable)) throw e;
+        }
+      }
+      if (analysis.meetingNeeded)
+        await db.query(
+          `insert into followup_tasks (organization_id, customer_id, kind, title, due_at, assigned_user_id, idempotency_key, notes, created_by_agent)
+           select $1, $2, 'meeting', $3, $4::timestamptz + interval '1 day', cu.owner_user_id, $5, $6, true from customers cu where cu.id = $2
+           on conflict (organization_id, idempotency_key) do nothing`,
+          [orgId, g.customer_id, `Obtenir un rendez-vous (objectif en retard) — ${g.title}`, now.toISOString(), `gap-meeting:${g.id}`, causes]);
       await db.query(
         `insert into followup_tasks (organization_id, customer_id, kind, title, due_at, assigned_user_id, idempotency_key, notes, created_by_agent)
          select $1, $2, 'plan', $3, $4::timestamptz + interval '2 days', cu.owner_user_id, $5, $6, true from customers cu where cu.id = $2
          on conflict (organization_id, idempotency_key) do nothing`,
-        [orgId, g.customer_id, g.title, now.toISOString(), `plan:${g.id}`, `${g.justification}\n${g.recommended_action}`]);
+        [orgId, g.customer_id, g.title, now.toISOString(), `plan:${g.id}`, `${g.justification}\nCauses possibles :\n${causes || "• aucune cause identifiable dans les factures"}\n${devOffer ? `Offre de développement préparée : ${devOffer}.` : "Pas de nouvelle offre (offre en cours, pression commerciale ou rien de pertinent)."}\n${g.recommended_action}`]);
       await db.query(`update opportunities set status = 'in_progress' where id = $1`, [g.id]);
       report.plansCreated++;
     }, report.errors);
@@ -178,6 +220,8 @@ export async function runAutopilot(db: Db, orgId: string, now = new Date()): Pro
     `insert into agent_runs (organization_id, kind, status, input, output, provider, started_at, finished_at) values ($1,'autopilot','succeeded',$2,$3,'deterministic',$4,now())`,
     [orgId, { level: cfg.level, now: now.toISOString() }, report, now.toISOString()],
   );
+  // 5. Compte rendu du jour (historisé, idempotent) : ce que LÉA a préparé et les décisions à valider.
+  await step(db, "brief", () => saveDailyBrief(db, orgId, today, report), report.errors);
   return report;
 }
 
@@ -191,4 +235,14 @@ export async function sendDueMessages(db: Db, orgId: string, now = new Date(), e
     if (r?.status === "sent") sent++;
   }
   return sent;
+}
+
+/** Calendrier de suivi d'une réactivation (idempotent) : point à J+14 et bilan à J+30 pour le commercial. */
+async function scheduleReactivationCalendar(db: Db, orgId: string, customerId: string, opportunityId: string, now: Date) {
+  for (const [days, title] of [[14, "Réactivation : point de suivi (réponse, commande, rendez-vous)"], [30, "Réactivation : bilan et prochaine étape"]] as const)
+    await db.query(
+      `insert into followup_tasks (organization_id, customer_id, kind, title, due_at, assigned_user_id, idempotency_key, created_by_agent)
+       select $1, $2, 'plan', $3, $4::timestamptz + make_interval(days => $5), cu.owner_user_id, $6, true from customers cu where cu.id = $2
+       on conflict (organization_id, idempotency_key) do nothing`,
+      [orgId, customerId, title, now.toISOString(), days, `reactivation:${opportunityId}:${days}`]);
 }
