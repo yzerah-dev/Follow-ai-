@@ -8,18 +8,18 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-background: #fbfbfd;
+  --color-background: #faf9fe;
   --color-surface: #ffffff;
-  --color-muted: #f4f5f8;
-  --color-border: #e7e8ee;
-  --color-border-strong: #d6d8e1;
-  --color-foreground: #0f1222;
-  --color-subtle: #5d6276;
-  --color-faint: #8b90a3;
+  --color-muted: #f4f2fa;
+  --color-border: #ecebf3;
+  --color-border-strong: #dcd9e8;
+  --color-foreground: #14112b;
+  --color-subtle: #5c5874;
+  --color-faint: #8d89a3;
 
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-primary-soft: #eef0ff;
+  --color-primary: #6e44ff;
+  --color-primary-hover: #5a32e8;
+  --color-primary-soft: #f1ecff;
   --color-primary-foreground: #ffffff;
 
   --color-success: #0f9f6e;
@@ -33,10 +33,10 @@
 
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
 
-  --shadow-card: 0 1px 2px rgb(15 18 34 / 0.04), 0 1px 1px rgb(15 18 34 / 0.03);
+  --shadow-card: 0 1px 2px rgb(20 17 43 / 0.04), 0 4px 16px -6px rgb(76 45 180 / 0.08);
   --shadow-pop: 0 12px 32px -8px rgb(15 18 34 / 0.18), 0 2px 6px rgb(15 18 34 / 0.06);
 }
 
@@ -58,11 +58,16 @@ body {
 }
 
 .lea-gradient {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #ec4899 120%);
+  background: linear-gradient(135deg, #7c4dff 0%, #9b6bff 55%, #c084fc 110%);
+}
+
+/* Carte LÉA (accueil) : dégradé lavande de la direction artistique */
+.lea-hero {
+  background: radial-gradient(120% 120% at 0% 0%, #efe7ff 0%, #e4d8ff 45%, #d6c4ff 100%);
 }
 
 .lea-glow {
-  box-shadow: 0 0 0 1px rgb(99 102 241 / 0.15), 0 8px 24px -6px rgb(99 102 241 / 0.45);
+  box-shadow: 0 0 0 1px rgb(110 68 255 / 0.15), 0 8px 24px -6px rgb(110 68 255 / 0.45);
 }
 
 @keyframes fade-up {
@@ -77,4 +82,12 @@ body {
 }
 .animate-fade-up {
   animation: fade-up 0.25s ease-out both;
+}
+
+/* Couleurs des graphiques (palette validée : scripts/validate_palette, mode clair) */
+:root {
+  --chart-1: #6e44ff;
+  --chart-2: #e0821b;
+  --chart-3: #1f8fb8;
+  --chart-4: #c2407e;
 }

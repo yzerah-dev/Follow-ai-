@@ -13,6 +13,7 @@ test("scénario principal : réassort → offre → supports → email → objec
   await login(page, "bruno@demo.follow.ai");
   await expect(page.getByText("Les priorités de LÉA aujourd'hui")).toBeVisible();
   await expect(page.getByTestId("opportunity").first()).toBeVisible();
+  await page.getByRole("link", { name: "Rapports" }).click();
   await expect(page.getByTestId("lea-performance")).toBeVisible();
   await page.goto("/clients?q=Maison%20Martin");
   await page.getByRole("link", { name: "Maison Martin & Fils" }).click();
@@ -80,7 +81,7 @@ test("scénario principal : réassort → offre → supports → email → objec
   await expect(page.getByText(/Demande de commande CMD-\d{4}-\d{5} préparée/).first()).toBeVisible();
 
   // 17. Le cockpit reflète le résultat
-  await page.goto("/");
+  await page.goto("/rapports");
   await expect(page.getByText("1 demande(s) de commande")).toBeVisible();
 });
 
@@ -119,7 +120,7 @@ test("mode autonome : réglé dans les paramètres, LÉA envoie seule", async ({
   await page.getByRole("button", { name: "Enregistrer l'autonomie" }).click();
   await expect(page.getByText("Autonomie de LÉA enregistrée.")).toBeVisible();
 
-  await page.goto("/");
+  await page.goto("/actions");
   await expect(page.getByText("LÉA au travail")).toBeVisible();
   await page.getByRole("button", { name: /Lancer LÉA maintenant/ }).click();
   await expect(page.getByText(/LÉA a préparé \d+ offre\(s\) : [1-9]\d* email\(s\) envoyé\(s\)/)).toBeVisible({ timeout: 60_000 });
@@ -136,6 +137,8 @@ test("mode autonome : réglé dans les paramètres, LÉA envoie seule", async ({
   await page.getByRole("button", { name: "Suspendre LÉA" }).click();
   await expect(page.getByText("Suspendue").first()).toBeVisible();
   await page.goto("/");
+  await expect(page.getByRole("button", { name: /Lancer LÉA maintenant/ })).toHaveCount(0);
+  await page.goto("/actions");
   await expect(page.getByRole("button", { name: /Lancer LÉA maintenant/ })).toHaveCount(0);
 });
 

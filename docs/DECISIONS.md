@@ -21,3 +21,6 @@
 | D17 | Envoi unique via `dispatchMessage` | Mêmes contrôles (opposition, consentement, connexion) pour humain et agent ; plage horaire et quota pour l'autonome |
 | D18 | Interrupteur via fonction `security definer` réservée aux managers | Un manager peut arrêter LÉA sans pouvoir modifier toute la politique |
 | D19 | Pas de validation humaine obligatoire des envois en V1 (décision client 2026-11-08) | JONAS autonome ; la validation reste un choix par organisation (mode supervisé) et s'applique toujours aux cas sensibles listés dans `autonomy.ts` |
+| D20 | Direction artistique violette, graphiques SVG faits main | Pas de dépendance graphique ; palette catégorielle validée (#6e44ff, #e0821b, #1f8fb8, #c2407e) ; légende avec valeurs, info-bulles, un seul axe |
+| D21 | LÉA illustrée (SVG stylisé), clients en initiales | Aucune photo de personne réelle ni logo de marque tiers sans licence ; un visuel sous licence peut être fourni (`public/lea.png`) |
+| D22 | « Permanent » dans la répartition du CA = couple client × produit facturé au moins 3 fois | Règle simple et déterministe, affichée sous le graphique ; distincte du critère de cycle régulier de la mission 2 |

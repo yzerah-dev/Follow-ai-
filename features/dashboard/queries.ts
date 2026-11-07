@@ -1,4 +1,5 @@
 import type { Db } from "@/lib/database/client";
+import { MISSION_OF, OPPORTUNITY_TYPES_OF, type Mission } from "@/features/opportunities/missions";
 
 export type DashboardOpportunity = {
   id: string;
@@ -17,14 +18,30 @@ export type DashboardOpportunity = {
   scoring: { potential: number; urgency: number; probability: number } | null;
 };
 
-/** Toutes les valeurs proviennent de la base : aucune métrique fictive. */
-export async function getDashboard(db: Db, orgId: string, today: string) {
-  const opps = await db.query<{ id: string; customer_id: string; customer_name: string; type: string; title: string; justification: string; confidence: string; estimated_value_ht: string | null; priority: number; recommended_action: string; offer_id: string | null; status: string; mission: string | null; scoring: DashboardOpportunity["scoring"] }>(
+/** Opportunités ouvertes ou en cours, triées par priorité ; filtre optionnel par mission. */
+export async function listOpportunities(db: Db, orgId: string, opts: { mission?: Mission; limit?: number } = {}): Promise<DashboardOpportunity[]> {
+  const params: unknown[] = [orgId, opts.limit ?? 200];
+  let filter = "";
+  if (opts.mission) {
+    params.push(opts.mission, OPPORTUNITY_TYPES_OF[opts.mission] ?? []);
+    filter = `and (o.details->>'mission' = $3 or (o.details->>'mission' is null and o.type::text = any($4::text[])))`;
+  }
+  const rows = (await db.query<{ id: string; customer_id: string; customer_name: string; type: string; title: string; justification: string; confidence: string; estimated_value_ht: string | null; priority: number; recommended_action: string; offer_id: string | null; status: string; mission: string | null; scoring: DashboardOpportunity["scoring"] }>(
     `select o.id, o.customer_id, coalesce(c.trade_name, c.legal_name) as customer_name, o.type, o.title, o.justification, o.confidence,
             o.estimated_value_ht, o.priority, o.recommended_action, o.offer_id, o.status, o.details->>'mission' as mission, o.details->'scoring' as scoring
      from opportunities o join customers c on c.id = o.customer_id
-     where o.organization_id = $1 and o.status in ('open', 'in_progress')
-     order by (o.status = 'open') desc, o.priority desc, o.estimated_value_ht desc nulls last limit 10`, [orgId]);
+     where o.organization_id = $1 and o.status in ('open', 'in_progress') ${filter}
+     order by (o.status = 'open') desc, o.priority desc, o.estimated_value_ht desc nulls last limit $2`, params)).rows;
+  return rows.map((o) => ({
+    id: o.id, customerId: o.customer_id, customerName: o.customer_name, type: o.type, title: o.title, justification: o.justification,
+    confidence: o.confidence, estimatedValueHt: o.estimated_value_ht, priority: o.priority, recommendedAction: o.recommended_action, offerId: o.offer_id, status: o.status,
+    mission: o.mission ?? MISSION_OF[o.type] ?? null, scoring: o.scoring,
+  }));
+}
+
+/** Toutes les valeurs proviennent de la base : aucune métrique fictive. */
+export async function getDashboard(db: Db, orgId: string, today: string) {
+  const opportunities = await listOpportunities(db, orgId, { limit: 10 });
   const stats = (await db.query<{ open_count: number; potential: string | null; reorder_count: number; dormant_count: number }>(
     `select count(*)::int as open_count, sum(estimated_value_ht) filter (where type in ('reorder','unclosed_offer')) as potential,
             count(*) filter (where type = 'reorder')::int as reorder_count, count(*) filter (where type = 'dormant_customer')::int as dormant_count
@@ -70,11 +87,7 @@ export async function getDashboard(db: Db, orgId: string, today: string) {
 
   return {
     hasInvoices,
-    opportunities: opps.rows.map<DashboardOpportunity>((o) => ({
-      id: o.id, customerId: o.customer_id, customerName: o.customer_name, type: o.type, title: o.title, justification: o.justification,
-      confidence: o.confidence, estimatedValueHt: o.estimated_value_ht, priority: o.priority, recommendedAction: o.recommended_action, offerId: o.offer_id, status: o.status,
-      mission: o.mission, scoring: o.scoring,
-    })),
+    opportunities,
     stats: { openOpportunities: stats.open_count, potentialHt: stats.potential, reorderCount: stats.reorder_count, dormantCount: stats.dormant_count },
     approvals: approvals.rows,
     approvalCount,

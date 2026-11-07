@@ -1,6 +1,17 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-08 — cerveau commercial : 6 missions permanentes._
+_Mise à jour : 2026-11-08 — direction artistique « LÉA fait avancer vos ventes »._
+
+## Direction artistique (2026-11-08)
+- Palette violette (primaire #6e44ff), cartes arrondies 16–20 px, ombres douces ; carte LÉA (illustration, statut Active / Supervisée / Suspendue) dans la barre latérale.
+- Navigation : Accueil, Clients, **Opportunités** (filtre par mission), **Actions** (validations, réponses, tâches, rendez-vous, activité de LÉA),
+  Conversations, Produits, Offres, Factures, **Studio créatif** (supports générés, modèles), **Rapports** (résultats par mission, CA) ; bandeau de navigation mobile.
+- Accueil : 4 indicateurs réels (CA du mois vs même période M-1, objectif annuel à date ou « À confirmer », clients actifs + nouveaux, actions à traiter),
+  priorités du jour, carte LÉA avec « Lancer LÉA maintenant », 6 tuiles de missions, évolution du CA (6 mois, mois en cours en pointillés) et répartition
+  permanents / nouveautés / complémentaires / autres (12 mois). Aucune valeur de la maquette n'est reprise.
+- Pas de logos de marques clients (initiales) ; LÉA est une illustration SVG (déposer un visuel sous licence `public/lea.png` si souhaité) ;
+  pas de carte « abonnement » tant que la facturation n'existe pas.
+
 
 ## Cerveau commercial — 6 missions (2026-11-08)
 - Missions quotidiennes : réactivation, permanents, complémentaires & **retours en stock**, nouveautés (+ catalogue personnalisé),
@@ -64,13 +75,13 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 - Données : 2 organisations fictives (`is_demo`, bandeau), 100 clients, 200 produits, ~1 700 factures / ~9 300 lignes par organisation,
   visuels produits de démonstration (dégradés étiquetés).
 
-## Tests exécutés (2026-11-08)
+## Tests exécutés (2026-11-08, après la DA)
 | Suite | Résultat |
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
 | `npm run test` | ✅ 80/80 |
-| `npm run test:integration` (PostgreSQL 16) | ✅ 51/51 (scénario supervisé, 9 autonomie, 10 discussions, 9 missions, 19 RLS, 3 imports) |
+| `npm run test:integration` (PostgreSQL 16) | ✅ 52/52 (scénario supervisé, 9 autonomie, 10 discussions, 10 missions dont accueil, 19 RLS, 3 imports) |
 | `npm run build` | ✅ |
 | `npm run e2e` (Playwright, Chromium) | ✅ 5/5 (dont mode autonome et discussion WhatsApp via l'interface) |
 

@@ -1,309 +1,230 @@
 import Link from "next/link";
-import { ArrowRight, Inbox, CheckCircle2, CalendarClock, Clock, Sparkles } from "lucide-react";
+import { ArrowRight, ChevronRight, Sparkles, Check, RefreshCw, Repeat, PackagePlus, Star, CalendarDays, Target, TrendingUp, TrendingDown } from "lucide-react";
 import { db } from "@/lib/auth/context";
-import { getDashboard } from "@/features/dashboard/queries";
+import { getHomeData } from "@/features/dashboard/home";
 import { formatMoney, dec } from "@/lib/money";
-import { formatDate, formatRelative, toIsoDate } from "@/lib/utils";
+import { toIsoDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState, LeaMark, Stat } from "@/components/ui/misc";
+import { EmptyState } from "@/components/ui/misc";
 import { ActionButton } from "@/components/app/action-button";
-import { OPPORTUNITY_LABEL } from "@/components/app/labels";
-import { createOfferFromOpportunityAction, dismissOpportunityAction, runScanAction, runAutopilotAction } from "@/app/actions/commercial";
-import { canWrite, canManage } from "@/lib/auth/roles";
-import { MISSION_LABEL, type Mission } from "@/features/opportunities/missions";
-import { getLeaPerformance } from "@/features/dashboard/performance";
+import { LeaAvatar } from "@/components/app/lea-avatar";
+import { AreaChart, Donut } from "@/components/app/charts";
+import { runAutopilotAction } from "@/app/actions/commercial";
+import { canManage } from "@/lib/auth/roles";
 
 export const metadata = { title: "Accueil" };
+
+const ACTION_TONE: Record<string, string> = {
+  Réactiver: "bg-danger-soft text-danger",
+  Réassort: "bg-success-soft text-success",
+  Compléter: "bg-info-soft text-info",
+  Nouveautés: "bg-primary-soft text-primary",
+  "Rendez-vous": "bg-warning-soft text-warning",
+  Accélérer: "bg-primary-soft text-primary",
+  Relancer: "bg-muted text-foreground/80",
+};
+
+const MISSION_TILES = [
+  { key: "reactivation", label: "Réactiver", hint: "les clients inactifs", icon: RefreshCw },
+  { key: "permanents", label: "Réassort", hint: "des produits permanents", icon: Repeat },
+  { key: "complementary", label: "Compléter", hint: "les gammes & retours en stock", icon: PackagePlus },
+  { key: "new_products", label: "Nouveautés", hint: "proposer les nouveaux produits", icon: Star },
+  { key: "meetings", label: "Rendez-vous", hint: "planifier les visites", icon: CalendarDays },
+  { key: "targets", label: "Objectifs", hint: "suivre les objectifs de CA", icon: Target },
+] as const;
+
+const REPARTITION = {
+  permanents: { label: "Permanents", color: "var(--chart-1)" },
+  news: { label: "Nouveautés", color: "var(--chart-2)" },
+  complementary: { label: "Complémentaires", color: "var(--chart-3)" },
+  others: { label: "Autres", color: "var(--chart-4)" },
+} as const;
 
 function greeting() {
   const h = Number(new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Europe/Paris" }).format(new Date()));
   return h < 18 ? "Bonjour" : "Bonsoir";
 }
 
+function initials(name: string) {
+  return name.split(/[\s-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+}
+
+function Kpi({ label, value, children, href }: { label: string; value: React.ReactNode; children?: React.ReactNode; href?: string }) {
+  const body = (
+    <div className="h-full rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-border-strong">
+      <p className="text-[13px] font-medium text-subtle">{label}</p>
+      <p className="tabular mt-2 text-[26px] font-bold tracking-tight">{value}</p>
+      <div className="mt-1.5 text-[12.5px] text-subtle">{children}</div>
+    </div>
+  );
+  return href ? <Link href={href} className="block">{body}</Link> : body;
+}
+
 export default async function HomePage() {
-  const { data, perf, ctx } = await db(async (d, ctx) => ({
-    data: await getDashboard(d, ctx.org.organizationId, toIsoDate(new Date())),
-    perf: await getLeaPerformance(d, ctx.org.organizationId, 90),
-    ctx,
-  }));
-  const writable = canWrite(ctx.org.role);
+  const { home, ctx } = await db(async (d, ctx) => ({ home: await getHomeData(d, ctx.org.organizationId, toIsoDate(new Date())), ctx }));
   const firstName = (ctx.displayName ?? "").split(" ")[0];
+  const hasData = home.evolution.some((e) => dec(e.ht).gt(0)) || home.clients.active > 0;
+  const targetPct = home.target && dec(home.target.totalHt).gt(0) ? Number(dec(home.target.realizedHt).dividedBy(home.target.totalHt).times(100).toFixed(0)) : null;
+  const monthFmt = new Intl.DateTimeFormat("fr-FR", { month: "short", timeZone: "UTC" });
 
   return (
-    <div className="space-y-7">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-[13px] font-medium text-faint">{new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" }).format(new Date())}</p>
-          <h1 className="mt-0.5 text-[26px] font-semibold tracking-tight">
-            {greeting()}
-            {firstName ? ` ${firstName}` : ""}.
-          </h1>
-          <p className="mt-1 text-sm text-subtle">
-            {data.stats.openOpportunities > 0
-              ? `LÉA a identifié ${data.stats.openOpportunities} opportunité${data.stats.openOpportunities > 1 ? "s" : ""} — voici les plus prioritaires. ${data.approvalCount} élément${data.approvalCount > 1 ? "s" : ""} attend${data.approvalCount > 1 ? "ent" : ""} votre validation.`
-              : "Aucune opportunité ouverte pour l'instant."}
-          </p>
-        </div>
-        {writable ? (
-          <ActionButton variant="secondary" action={runScanAction} pendingLabel="Analyse en cours…">
-            <Sparkles /> Relancer l&apos;analyse
-          </ActionButton>
-        ) : null}
+    <div className="space-y-6">
+      <div>
+        <p className="text-[15px] font-medium text-subtle">
+          {greeting()}
+          {firstName ? ` ${firstName}` : ""} 👋
+        </p>
+        <h1 className="mt-1 text-[30px] font-bold tracking-tight">
+          <span className="text-primary">LÉA</span> fait avancer vos ventes
+        </h1>
+        <p className="mt-1 text-[14px] text-subtle">Vos clients sont suivis, relancés et développés chaque jour.</p>
       </div>
 
-      <Card className={data.autonomy.paused ? "border-danger/30" : data.autonomy.level !== "supervised" ? "border-primary/25" : ""}>
-        <div className="flex flex-wrap items-center gap-4 px-5 py-4">
-          <LeaMark size={36} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[14px] font-semibold">LÉA au travail</p>
-              {data.autonomy.paused ? <Badge tone="danger">Suspendue</Badge> : data.autonomy.level === "autonomous" ? <Badge tone="success">Autonome</Badge> : data.autonomy.level === "semi_autonomous" ? <Badge tone="info">Semi-autonome</Badge> : <Badge>Supervisé</Badge>}
-            </div>
-            <p className="mt-0.5 text-[13px] text-subtle">
-              {data.autonomy.level === "supervised" || data.autonomy.paused
-                ? "LÉA prépare offres et messages ; rien ne part sans votre validation."
-                : `Aujourd'hui : ${data.autonomy.sentToday} envoi(s) automatique(s) · ${data.autonomy.scheduled} programmé(s) · ${data.autonomy.escalations} dossier(s) transféré(s) au commercial.`}
-            </p>
-          </div>
-          {canManage(ctx.org.role) && !data.autonomy.paused ? (
-            <ActionButton variant="lea" action={runAutopilotAction} pendingLabel="LÉA travaille…">
-              <Sparkles /> Lancer LÉA maintenant
-            </ActionButton>
-          ) : null}
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/parametres#autonomie">Régler</Link>
-          </Button>
-        </div>
-        {data.activity.length ? (
-          <div className="border-t border-border px-5 py-3">
-            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-faint">Dernières actions de LÉA</p>
-            <ul className="space-y-1">
-              {data.activity.map((a) => (
-                <li key={a.id} className="flex items-start gap-2 text-[12.5px]" data-testid="lea-activity">
-                  {(() => {
-                    // Libellé selon le statut RÉEL du message (envoyé, programmé, en attente).
-                    const what = a.decision_type === "auto_send" ? "Offre" : a.decision_type === "auto_reply" ? "Réponse" : a.decision_type === "auto_followup" ? "Relance" : null;
-                    if (!what) return <Badge tone="warning">{a.decision_type === "escalation" ? "Transféré" : "À valider"}</Badge>;
-                    if (a.message_status === "approved" && a.scheduled_at)
-                      return <Badge tone="info">{what} programmée {formatDate(a.scheduled_at, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</Badge>;
-                    if (a.message_status === "sent" || a.message_status === "simulated_sent") return <Badge tone="success">{what} envoyée</Badge>;
-                    return <Badge tone="warning">{what} — {a.message_status ?? "statut inconnu"}</Badge>;
-                  })()}
-                  {a.conversation_id ? (
-                    <Link href={`/conversations/${a.conversation_id}`} className="font-medium hover:text-primary">{a.customer_name ?? "Client"}</Link>
-                  ) : (
-                    <span className="font-medium">{a.customer_name ?? "Client"}</span>
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-subtle">{a.rationale}</span>
-                  <span className="shrink-0 text-faint">{formatRelative(a.created_at)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </Card>
-
-      {!data.hasInvoices ? (
+      {!hasData ? (
         <EmptyState
           title="Importez vos factures pour réveiller LÉA"
-          description="LÉA calcule les réassorts, les clients dormants et les opportunités à partir de vos factures détaillées. Aucune métrique n'est affichée tant qu'aucune donnée réelle n'est disponible."
+          description="LÉA calcule les réassorts, les clients inactifs et les opportunités à partir de vos factures détaillées. Aucune métrique n'est affichée tant qu'aucune donnée réelle n'est disponible."
           action={<Button asChild><Link href="/parametres/imports">Importer des données</Link></Button>}
         />
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Potentiel estimé" value={data.stats.potentialHt ? formatMoney(data.stats.potentialHt, "EUR", { compact: true }) : "—"} hint="Réassorts et offres en cours · estimation, pas une commande" tone="primary" />
-        <Stat label="Opportunités ouvertes" value={data.stats.openOpportunities} hint={`${data.stats.reorderCount} réassorts · ${data.stats.dormantCount} clients dormants`} />
-        <Stat label="Offres préparées" value={data.offers.prepared} hint={`${data.offers.sent_month} envoyée(s) ce mois · ${data.offers.in_negotiation} en négociation`} href="/offres" />
-        <Stat label="Résultat du mois" value={formatMoney(data.results.wonAmountHt, "EUR", { compact: true })} hint={`${data.results.orderRequests} demande(s) de commande`} tone="success" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="CA facturé (mois en cours)" value={formatMoney(home.caMonth, "EUR", { compact: true })}>
+          {home.caPct === null ? (
+            <span>Pas de comparaison possible</span>
+          ) : (
+            <span>
+              <span className={home.caPct >= 0 ? "inline-flex items-center gap-1 whitespace-nowrap font-semibold text-success" : "inline-flex items-center gap-1 whitespace-nowrap font-semibold text-danger"}>
+                {home.caPct >= 0 ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
+                {home.caPct > 0 ? "+" : ""}
+                {home.caPct.toLocaleString("fr-FR")}&nbsp;%
+              </span>{" "}
+              vs même période du mois dernier
+            </span>
+          )}
+        </Kpi>
+        <Kpi label="Objectif annuel (à date)" value={home.target ? formatMoney(home.target.realizedHt, "EUR", { compact: true }) : "À confirmer"}>
+          {home.target && targetPct !== null ? (
+            <div>
+              <div className="flex justify-between">
+                <span>sur {formatMoney(home.target.totalHt, "EUR", { compact: true })} · {home.target.customers} client{home.target.customers > 1 ? "s" : ""}</span>
+                <span className="font-semibold text-foreground">{targetPct} %</span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={targetPct} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, targetPct)}%` }} />
+              </div>
+            </div>
+          ) : (
+            <span>Aucun objectif fixé — à définir sur les fiches clients</span>
+          )}
+        </Kpi>
+        <Kpi label="Clients actifs (12 mois)" value={home.clients.active} href="/clients">
+          <span className="font-medium text-success">+{home.clients.fresh}</span> nouveau{home.clients.fresh > 1 ? "x" : ""} (90 jours)
+        </Kpi>
+        <Kpi label="Actions de LÉA" value={home.todo.total} href="/actions">
+          à traiter aujourd&apos;hui · {home.todo.approvals} validation{home.todo.approvals > 1 ? "s" : ""}, {home.todo.replies} réponse{home.todo.replies > 1 ? "s" : ""}
+        </Kpi>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2.5">
-              <LeaMark size={22} />
-              <CardTitle>Les priorités de LÉA aujourd&apos;hui</CardTitle>
-            </div>
-            <span className="text-[12px] text-faint">Potentiel × urgence × probabilité de conversion</span>
+            <CardTitle>Les priorités de LÉA aujourd&apos;hui</CardTitle>
+            <Link href="/opportunites" className="text-[13px] font-medium text-primary hover:underline">Tout voir</Link>
           </CardHeader>
-          <CardContent className="space-y-2.5 px-3 pb-3">
-            {data.opportunities.length === 0 ? <p className="px-2 py-6 text-center text-sm text-subtle">Rien à signaler aujourd&apos;hui.</p> : null}
-            {data.opportunities.map((o) => (
-              <div key={o.id} className="rounded-lg border border-border px-4 py-3.5 transition-colors hover:border-border-strong" data-testid="opportunity">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Link href={`/clients/${o.customerId}`} className="text-[14px] font-semibold hover:text-primary">
-                        {o.customerName}
-                      </Link>
-                      {o.mission ? <Badge tone="outline">{MISSION_LABEL[o.mission as Mission] ?? o.mission}</Badge> : null}
-                      <Badge tone="primary">{OPPORTUNITY_LABEL[o.type] ?? o.type}</Badge>
-                      {o.status === "in_progress" ? <Badge tone="info">En cours</Badge> : null}
-                    </div>
-                    <p className="mt-1 text-[13.5px] font-medium">« {o.title} »</p>
-                    <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-subtle">{o.justification}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="tabular text-[15px] font-semibold">{o.estimatedValueHt ? formatMoney(o.estimatedValueHt, "EUR", { compact: true }) : "À confirmer"}</p>
-                    <p className="text-[11px] text-faint">{o.estimatedValueHt ? "potentiel estimé HT" : "potentiel non chiffré"}</p>
-                    {o.scoring ? (
-                      <div className="mt-1.5 space-y-0.5" aria-label="Facteurs de priorité">
-                        {([["Potentiel", o.estimatedValueHt ? o.scoring.potential : null], ["Urgence", o.scoring.urgency], ["Probabilité", o.scoring.probability]] as const).map(([label, v]) => (
-                          <div key={label} className="flex items-center justify-end gap-1.5 text-[10.5px] text-faint">
-                            <span>{label}</span>
-                            <span className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
-                              <span className="block h-full rounded-full bg-primary/70" style={{ width: `${Math.round((v ?? 0) * 100)}%` }} />
-                            </span>
-                            <span className="w-7 text-right tabular">{v === null ? "—" : `${Math.round(v * 100)}`}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-1 text-[11px] text-faint">Confiance {Math.round(dec(o.confidence).toNumber() * 100)} %</p>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/clients/${o.customerId}`}>Voir le client</Link>
-                  </Button>
-                  {o.offerId ? (
-                    <Button asChild variant="soft" size="sm">
-                      <Link href={`/offres/${o.offerId}`}>
-                        Voir l&apos;offre <ArrowRight />
-                      </Link>
-                    </Button>
-                  ) : writable && ["reorder", "dormant_customer", "new_product", "cross_sell", "back_in_stock", "campaign"].includes(o.type) ? (
-                    <ActionButton size="sm" action={createOfferFromOpportunityAction.bind(null, o.id)} pendingLabel="LÉA prépare l'offre…">
-                      Préparer l&apos;offre <ArrowRight />
-                    </ActionButton>
-                  ) : null}
-                  {writable && !o.offerId ? (
-                    <ActionButton size="sm" variant="ghost" action={dismissOpportunityAction.bind(null, o.id)}>
-                      Ignorer
-                    </ActionButton>
-                  ) : null}
-                  <span className="ml-auto text-[12px] text-faint">{o.recommendedAction}</span>
-                </div>
-              </div>
+          <CardContent className="space-y-1 px-3 pb-3">
+            {home.priorities.length === 0 ? <p className="px-2 py-6 text-center text-sm text-subtle">Rien à signaler aujourd&apos;hui.</p> : null}
+            {home.priorities.map((p) => (
+              <Link key={p.id} href={`/clients/${p.customerId}`} className="flex items-center gap-3 rounded-xl px-2 py-2.5 hover:bg-muted" data-testid="opportunity">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-[12.5px] font-bold text-primary">{initials(p.customerName)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-semibold">{p.customerName}</span>
+                  <span className="block truncate text-[12.5px] text-subtle">{p.subtitle}</span>
+                </span>
+                <span className={`hidden rounded-full px-2.5 py-0.5 sm:inline text-[12px] font-medium ${ACTION_TONE[p.action] ?? "bg-muted"}`}>{p.action}</span>
+                <span className="tabular shrink-0 text-right text-[14px] font-semibold sm:w-24">
+                  {p.valueHt ? `+ ${formatMoney(p.valueHt, "EUR", { compact: true })}` : <span className="text-[12px] font-medium text-subtle">À confirmer</span>}
+                </span>
+                <ChevronRight className="size-4 text-faint" />
+              </Link>
             ))}
           </CardContent>
         </Card>
 
-        <div className="space-y-5">
-          <Card id="validations">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle2 className="size-4 text-warning" /> Validations en attente
-              </CardTitle>
-              <Badge tone={data.approvalCount ? "warning" : "neutral"}>{data.approvalCount}</Badge>
-            </CardHeader>
-            <CardContent className="space-y-1 px-3">
-              {data.approvals.length === 0 ? <p className="px-2 py-2 text-[13px] text-subtle">Tout est à jour.</p> : null}
-              {data.approvals.map((a) => (
-                <Link
-                  key={a.id}
-                  href={a.offer_id ? `/offres/${a.offer_id}` : a.conversation_id ? `/conversations/${a.conversation_id}` : "/"}
-                  className="flex items-center gap-2 rounded-md px-2 py-2 text-[13px] hover:bg-muted"
-                >
-                  <Badge tone={a.subject_type === "discount" ? "danger" : a.subject_type === "offer" ? "info" : "primary"}>
-                    {a.subject_type === "offer" ? "Offre" : a.subject_type === "discount" ? "Remise" : "Message"}
-                  </Badge>
-                  <span className="min-w-0 flex-1 truncate">{a.summary}</span>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Inbox className="size-4 text-primary" /> Réponses à traiter
-              </CardTitle>
-              <Badge tone={data.replies.length ? "primary" : "neutral"}>{data.replies.length}</Badge>
-            </CardHeader>
-            <CardContent className="space-y-1 px-3">
-              {data.replies.length === 0 ? <p className="px-2 py-2 text-[13px] text-subtle">Aucune réponse en attente.</p> : null}
-              {data.replies.map((r) => (
-                <Link key={r.id} href={`/conversations/${r.conversation_id}`} className="block rounded-md px-2 py-2 text-[13px] hover:bg-muted">
-                  <span className="font-medium">{r.customer_name ?? r.from_address}</span>
-                  <span className="block truncate text-[12px] text-subtle">{r.subject}</span>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="size-4 text-subtle" /> Relances & tâches
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 px-3">
-              {data.tasks.length === 0 ? <p className="px-2 py-2 text-[13px] text-subtle">Aucune tâche imminente.</p> : null}
-              {data.tasks.map((t) => (
-                <Link key={t.id} href={t.customer_id ? `/clients/${t.customer_id}` : "/"} className="flex items-center justify-between gap-2 rounded-md px-2 py-2 text-[13px] hover:bg-muted">
-                  <span className="min-w-0 truncate">{t.title}</span>
-                  <span className="shrink-0 text-[11px] text-faint">{formatRelative(t.due_at)}</span>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarClock className="size-4 text-subtle" /> Rendez-vous
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-5">
-              {data.appointments.length === 0 ? <p className="text-[13px] text-subtle">Aucun rendez-vous planifié.</p> : null}
-              {data.appointments.map((a) => (
-                <p key={a.id} className="py-1 text-[13px]">
-                  {a.customer_name} · {formatRelative(a.starts_at)}
-                </p>
-              ))}
-            </CardContent>
-          </Card>
+        <div className="lea-hero relative overflow-hidden rounded-2xl border border-primary/15 p-6 shadow-card">
+          <div className="flex items-start gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-[19px] font-bold leading-snug">LÉA travaille pour vous, chaque jour.</p>
+              <ul className="mt-4 space-y-2.5 text-[13.5px]">
+                {["Analyse vos factures et vos clients", "Détecte les opportunités de vente", "Prépare les offres et les messages", "Relance par e-mail et WhatsApp", "Répond aux clients et vous transmet le reste"].map((t) => (
+                  <li key={t} className="flex items-center gap-2.5">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-white"><Check className="size-3" strokeWidth={3} /></span>
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <LeaAvatar size={112} className="shrink-0" />
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {canManage(ctx.org.role) && !home.leaPaused ? (
+              <ActionButton variant="lea" action={runAutopilotAction} pendingLabel="LÉA travaille…">
+                <Sparkles /> Lancer LÉA maintenant
+              </ActionButton>
+            ) : null}
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/actions">Voir son activité <ArrowRight /></Link>
+            </Button>
+          </div>
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Résultats de LÉA par mission (90 jours)</CardTitle>
-          <span className="text-[12px] text-faint">CA attribuable : factures des produits proposés, 45 jours après l&apos;envoi, plafonné à l&apos;offre</span>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]" data-testid="lea-performance">
-            <thead className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
-              <tr>
-                <th className="px-5 py-2 font-medium">Mission</th>
-                <th className="px-3 py-2 text-right font-medium">Détectées</th>
-                <th className="px-3 py-2 text-right font-medium">Traitées</th>
-                <th className="px-3 py-2 text-right font-medium">Offres envoyées</th>
-                <th className="px-3 py-2 text-right font-medium">Conversion</th>
-                <th className="px-3 py-2 text-right font-medium">Commandes HT</th>
-                <th className="px-5 py-2 text-right font-medium">CA facturé attribuable</th>
-              </tr>
-            </thead>
-            <tbody>
-              {perf.map((m) => (
-                <tr key={m.mission} className="border-b border-border/70 last:border-0">
-                  <td className="px-5 py-2 font-medium">{MISSION_LABEL[m.mission]}</td>
-                  <td className="tabular px-3 py-2 text-right">{m.detected}</td>
-                  <td className="tabular px-3 py-2 text-right">{m.actioned}</td>
-                  <td className="tabular px-3 py-2 text-right">{m.offersSent}</td>
-                  <td className="tabular px-3 py-2 text-right">{m.conversionPct === null ? "—" : `${m.conversionPct} %`}</td>
-                  <td className="tabular px-3 py-2 text-right">{formatMoney(m.ordersHt, "EUR", { compact: true })}</td>
-                  <td className="tabular px-5 py-2 text-right">{formatMoney(m.invoicedHt, "EUR", { compact: true })}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {MISSION_TILES.map((m) => (
+          <Link key={m.key} href={`/opportunites?mission=${m.key}`} className="group rounded-2xl border border-border bg-surface p-4 shadow-card transition-colors hover:border-primary/30">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-soft text-primary"><m.icon className="size-5" /></span>
+            <p className="mt-3 text-[14px] font-semibold group-hover:text-primary">{m.label}</p>
+            <p className="text-[12px] text-subtle">{m.hint}</p>
+          </Link>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Évolution du CA</CardTitle>
+            <span className="text-[12px] text-faint">CA facturé net HT · 6 derniers mois · mois en cours en pointillés</span>
+          </CardHeader>
+          <CardContent>
+            <AreaChart
+              ariaLabel="Évolution du chiffre d'affaires facturé sur 6 mois"
+              partialLast
+              points={home.evolution.map((e, i) => ({
+                label: monthFmt.format(new Date(`${e.month}-01T00:00:00Z`)).replace(".", "") + (i === home.evolution.length - 1 ? " (en cours)" : ""),
+                value: dec(e.ht).toNumber(),
+                display: formatMoney(e.ht, "EUR", { compact: true }),
+              }))}
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Répartition du CA</CardTitle>
+            <span className="text-[12px] text-faint">12 derniers mois · {formatMoney(home.repartitionTotalHt, "EUR", { compact: true })}</span>
+          </CardHeader>
+          <CardContent>
+            <Donut
+              ariaLabel="Répartition du chiffre d'affaires par catégorie"
+              centerLabel={formatMoney(home.repartitionTotalHt, "EUR", { compact: true })}
+              segments={home.repartition.map((r) => ({ label: REPARTITION[r.key].label, color: REPARTITION[r.key].color, pct: r.pct, display: formatMoney(r.ht, "EUR", { compact: true }) }))}
+            />
+            <p className="mt-4 text-[11.5px] leading-relaxed text-faint">
+              Permanents : produits achetés au moins 3 fois par le client. Complémentaires : autres produits commandés avec un permanent. Nouveautés : produits marqués nouveaux.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

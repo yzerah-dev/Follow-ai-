@@ -150,3 +150,27 @@ describe("Mesure des conversions et du CA attribuable", () => {
     expect(Number(permanents.invoicedHt)).toBeGreaterThanOrEqual(Number(offer.total_ht) - 0.01);
   });
 });
+
+describe("Accueil (direction artistique) : données réelles uniquement", () => {
+  it("indicateurs, priorités, évolution et répartition calculés depuis la base", async () => {
+    const { getHomeData } = await import("@/features/dashboard/home");
+    const { listOpportunities } = await import("@/features/dashboard/queries");
+    const h = await withUser(I.alice, (db) => getHomeData(db, I.orgA, TODAY));
+    expect(h.evolution).toHaveLength(6);
+    expect(h.clients.active).toBeGreaterThan(0);
+    expect(h.priorities.length).toBeGreaterThan(0);
+    expect(h.priorities.length).toBeLessThanOrEqual(5);
+    for (const p of h.priorities) expect(p.action).not.toBe("Agir");
+    const pct = h.repartition.reduce((a, r) => a + r.pct, 0);
+    expect(pct).toBeGreaterThan(99.5);
+    expect(pct).toBeLessThan(100.5);
+    // Filtre par mission : ne renvoie que la mission demandée
+    const react = await withUser(I.alice, (db) => listOpportunities(db, I.orgA, { mission: "reactivation" }));
+    expect(react.length).toBeGreaterThan(0);
+    expect(react.every((o) => o.mission === "reactivation")).toBe(true);
+    // Isolation : une autre organisation ne voit rien des données de JONAS
+    const other = await withUser(I.chloe, (db) => getHomeData(db, I.orgA, TODAY));
+    expect(other.priorities).toHaveLength(0);
+    expect(other.caMonth).toBe("0.00");
+  });
+});
