@@ -14,6 +14,10 @@ export const WHATSAPP_TEMPLATES = {
     language: "fr",
     text: "Bonjour {{1}}, je reviens vers vous au sujet de la proposition {{2}}. Souhaitez-vous que je prépare la commande ? Répondez simplement à ce message. — LÉA, {{3}}",
   },
+  proposition_rdv: {
+    language: "fr",
+    text: "Bonjour {{1}}, je vous propose un point de 20 minutes {{2}} pour faire le tour de vos références et vous présenter nos nouveautés. Quel créneau vous conviendrait ? Répondez simplement à ce message. — LÉA, {{3}}",
+  },
 } as const;
 
 export type TemplateName = keyof typeof WHATSAPP_TEMPLATES;

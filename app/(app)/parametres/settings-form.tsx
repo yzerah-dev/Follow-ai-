@@ -5,7 +5,7 @@ import { updateSettingsAction, type ActionResult } from "@/app/actions/commercia
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
-type Initial = { maxAutoDiscountPct: string; dormantAfterDays: number; reorderLookaheadDays: number; offerValidityDays: number; primaryColor: string; companyName: string };
+type Initial = { maxAutoDiscountPct: string; dormantAfterDays: number; reorderLookaheadDays: number; offerValidityDays: number; primaryColor: string; companyName: string; meetingIntervalDays: number; contactCooldownDays: number; refusalCooldownDays: number; targetAlertPct: string };
 
 export function SettingsForm({ initial, readOnly }: { initial: Initial; readOnly: boolean }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(updateSettingsAction, null);
@@ -23,6 +23,10 @@ export function SettingsForm({ initial, readOnly }: { initial: Initial; readOnly
       {field("reorderLookaheadDays", "Horizon de réassort (jours)", { type: "number", min: 1, max: 120 })}
       {field("companyName", "Nom affiché sur les documents", { maxLength: 120 })}
       {field("primaryColor", "Couleur principale", { pattern: "#[0-9a-fA-F]{6}" })}
+      {field("meetingIntervalDays", "Rendez-vous conseillé après (jours sans rencontre)", { type: "number", min: 30, max: 1000 })}
+      {field("targetAlertPct", "Alerte objectif CA : retard de plus de (%)", { type: "number", step: "0.5", min: 0, max: 100 })}
+      {field("contactCooldownDays", "Pas plus d'une sollicitation par client tous les (jours)", { type: "number", min: 0, max: 90 })}
+      {field("refusalCooldownDays", "Pause après un refus du client (jours)", { type: "number", min: 0, max: 365 })}
       {!readOnly ? (
         <div className="flex items-center gap-3 sm:col-span-2">
           <Button type="submit" disabled={pending}>{pending ? "Enregistrement…" : "Enregistrer"}</Button>

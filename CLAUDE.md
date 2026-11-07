@@ -28,6 +28,10 @@ Lire aussi `docs/PROGRESS.md` (état courant) et `docs/DECISIONS.md` (choix d'ar
    sinon modèle approuvé (`features/conversations/templates.ts`, variables remplies par le système, jamais par l'IA).
 11. **Discussion** : LÉA répond à partir de l'historique de la conversation et des faits vérifiés (`features/agent/answers.ts`) ;
    ce qui n'a pas de donnée fiable (ex. délai de livraison) est annoncé comme « vérifié par le commercial » + tâche `reply`.
+12. **6 missions** (`features/opportunities/engine.ts` + `missions.ts`) : réactivation, permanents, complémentaires & retours en stock,
+   nouveautés, rendez-vous, objectifs de CA. Calculs déterministes, scoring potentiel × urgence × probabilité, « À confirmer » si donnée
+   manquante. Respect des refus (`solicit_paused_until`, `do_not_solicit`), préférence de canal, une sollicitation proactive par client
+   tous les `contact_cooldown_days`. Les objectifs de CA sont fixés par des humains uniquement.
 7. **Remises** : politique configurable par organisation. Préréglage JONAS (1 %, transfert au-delà) jamais imposé aux autres.
 8. **Prix d'achat / marges** : table `product_purchase_costs` (owner/admin/manager) ; jamais dans un support client.
 9. **Fidélité produit** : ne jamais modifier packaging, logo, référence, EAN, textes, contenance, prix, couleurs, forme.

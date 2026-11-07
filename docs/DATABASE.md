@@ -18,7 +18,7 @@ PostgreSQL (Supabase en production). Migrations : `supabase/migrations/`.
 | Clients | customers, contacts, customer_contacts (N-N, contacts partagés) |
 | Produits | products, product_purchase_costs (restreinte), product_variants, product_images, product_prices, inventory_snapshots |
 | Facturation | invoices (factures + avoirs, statut ≠ règlement), invoice_lines |
-| Commercial | campaigns, campaign_products, opportunities, offers, offer_lines, order_requests |
+| Commercial | campaigns, campaign_products, opportunities, offers, offer_lines, order_requests, customer_targets (objectifs CA, fixés par des humains) |
 | Communications | communication_connections, connection_secrets (aucun accès applicatif), conversations, messages, communication_events, suppression_entries |
 | LÉA | agent_memory (fait vérifié / déclaré / hypothèse, `valid_until`), agent_runs (coûts, jetons), agent_decisions, approvals, followup_tasks, appointments |
 | Studio | creative_templates (versionnés), creative_jobs, generated_assets (sha256, rapport de validation), documents |

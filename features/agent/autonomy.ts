@@ -22,6 +22,7 @@ export type AutonomySettings = {
 export type AutonomyAction =
   | { kind: "offer_email"; offerTotalHt: string; discountPct: number; guardNotes: string[]; identityVerified: boolean }
   | { kind: "followup"; attempt: number; maxFollowups: number; guardNotes: string[] }
+  | { kind: "meeting_proposal"; guardNotes: string[]; identityVerified: boolean }
   | {
       kind: "reply";
       intent: string;
@@ -50,6 +51,11 @@ export function decideAutonomy(s: AutonomySettings, a: AutonomyAction): Autonomy
     if (s.maxOfferHt !== null && dec(a.offerTotalHt).gt(dec(s.maxOfferHt))) return approval(`Offre supérieure au plafond d'envoi autonome (${dec(s.maxOfferHt).toFixed(2)} € HT).`);
     if (a.discountPct > 0 && s.requireDiscountApproval) return approval("Remise présente : validation exigée par la politique.");
     return auto("Offre conforme à la politique commerciale.");
+  }
+
+  if (a.kind === "meeting_proposal") {
+    if (!a.identityVerified) return approval("Destinataire non vérifié.");
+    return auto("Proposition de rendez-vous sans engagement commercial.");
   }
 
   if (a.kind === "followup") {

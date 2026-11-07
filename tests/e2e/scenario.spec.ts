@@ -11,12 +11,21 @@ async function login(page: Page, email: string) {
 test("scénario principal : réassort → offre → supports → email → objection → commande", async ({ page }) => {
   // 1-3. Connexion et cockpit : LÉA a identifié le réassort de Maison Martin & Fils
   await login(page, "bruno@demo.follow.ai");
+  await expect(page.getByText("Les priorités de LÉA aujourd'hui")).toBeVisible();
   await expect(page.getByTestId("opportunity").first()).toBeVisible();
+  await expect(page.getByTestId("lea-performance")).toBeVisible();
   await page.goto("/clients?q=Maison%20Martin");
   await page.getByRole("link", { name: "Maison Martin & Fils" }).click();
   await page.waitForURL(/\/clients\/[0-9a-f-]{36}$/);
   await expect(page.getByText("Prochaine action recommandée par LÉA")).toBeVisible();
-  await expect(page.getByText("Réassort probable de 4 références")).toBeVisible();
+  await expect(page.getByText("Réassort probable de 4 références").first()).toBeVisible();
+  // Développement du client : objectif CA, produits permanents, plan
+  await expect(page.getByTestId("target")).toContainText("Objectif annuel");
+  await expect(page.getByTestId("target")).toContainText("En retard");
+  await expect(page.getByTestId("target")).toContainText("Prévision de fin de période");
+  await expect(page.getByTestId("permanent")).toHaveCount(4);
+  await expect(page.getByTestId("growth-plan")).toContainText("Réalisé");
+  await expect(page.getByTestId("growth-plan")).toContainText("Les leviers chiffrés couvrent");
 
   // 4-6. LÉA prépare l'offre
   await page.getByRole("button", { name: /^Préparer l'offre/ }).click();

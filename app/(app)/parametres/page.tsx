@@ -20,7 +20,7 @@ export const metadata = { title: "Paramètres" };
 
 export default async function SettingsPage() {
   const { data, ctx } = await db(async (d, ctx) => {
-    const s = (await d.query<{ autonomy_level: "supervised" | "semi_autonomous" | "autonomous"; autonomy_paused: boolean; autonomous_max_offer_ht: string | null; daily_send_limit: number; daily_offer_limit: number; send_window: { days: number[]; start: string; end: string }; followup_after_days: number; max_followups: number; max_auto_discount_pct: string; require_discount_approval: boolean; dormant_after_days: number; reorder_lookahead_days: number; offer_validity_days: number; policy_name: string | null; brand: { primaryColor?: string; companyName?: string } }>(
+    const s = (await d.query<{ meeting_interval_days: number; contact_cooldown_days: number; refusal_cooldown_days: number; target_alert_pct: string; autonomy_level: "supervised" | "semi_autonomous" | "autonomous"; autonomy_paused: boolean; autonomous_max_offer_ht: string | null; daily_send_limit: number; daily_offer_limit: number; send_window: { days: number[]; start: string; end: string }; followup_after_days: number; max_followups: number; max_auto_discount_pct: string; require_discount_approval: boolean; dormant_after_days: number; reorder_lookahead_days: number; offer_validity_days: number; policy_name: string | null; brand: { primaryColor?: string; companyName?: string } }>(
       `select * from organization_settings where organization_id = $1`, [ctx.org.organizationId])).rows[0]!;
     const members = (await d.query<{ id: string; display_name: string | null; role: MemberRole; status: string }>(`select id, display_name, role, status from organization_members where organization_id = $1 order by role`, [ctx.org.organizationId])).rows;
     const usage = (await d.query<{ runs: number; tokens_in: number; tokens_out: number; cost: string }>(
@@ -85,7 +85,7 @@ export default async function SettingsPage() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Politique commerciale & marque</CardTitle>
+            <CardTitle>Politique commerciale, missions & marque</CardTitle>
             {data.s.policy_name ? <Badge tone="primary">{data.s.policy_name}</Badge> : null}
           </CardHeader>
           <CardContent>
@@ -98,6 +98,10 @@ export default async function SettingsPage() {
                 offerValidityDays: data.s.offer_validity_days,
                 primaryColor: data.s.brand.primaryColor ?? "#4F46E5",
                 companyName: data.s.brand.companyName ?? ctx.org.name,
+                meetingIntervalDays: data.s.meeting_interval_days,
+                contactCooldownDays: data.s.contact_cooldown_days,
+                refusalCooldownDays: data.s.refusal_cooldown_days,
+                targetAlertPct: dec(data.s.target_alert_pct).toString(),
               }}
             />
             <p className="mt-3 text-[12px] text-faint">

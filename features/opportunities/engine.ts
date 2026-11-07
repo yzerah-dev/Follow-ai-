@@ -8,8 +8,10 @@ import { dec, round2, D } from "@/lib/money";
 import { addDays, toIsoDate } from "@/lib/utils";
 import { customerSummary, productHabits, type InvoiceLite, type LineLite } from "@/features/invoices/analytics";
 import { resolvePrice, type PriceRow } from "@/features/offers/pricing";
+import { computeTargetProgress, type TargetInput } from "@/features/customers/targets";
+import { MISSION_OF } from "./missions";
 
-export type OpportunityType = "reorder" | "dormant_customer" | "new_product" | "cross_sell" | "campaign" | "unclosed_offer" | "appointment";
+export type OpportunityType = "reorder" | "dormant_customer" | "new_product" | "cross_sell" | "back_in_stock" | "campaign" | "unclosed_offer" | "appointment" | "target_gap";
 
 export type EngineProduct = {
   id: string;
@@ -55,21 +57,45 @@ export type EngineInput = {
   coPurchase?: Map<string, { productId: string; lift: number; confidence: number; support: number }[]>;
   activeCampaigns?: { id: string; name: string; productIds: string[]; endsOn: string | null }[];
   openOffers?: { id: string; number: string; status: string; sentAt: string | null; totalHt: string }[];
+  /** Mission 3 : produits redevenus disponibles récemment (dernier relevé > 0 après un relevé à 0). */
+  restocks?: { productId: string; restockedAt: string }[];
+  /** Mission 5 : date du dernier rendez-vous réalisé (null = aucun enregistré). */
+  lastMeetingAt?: string | null;
+  meetingIntervalDays?: number;
+  /** Mission 6 : objectif de CA de la période en cours. */
+  target?: TargetInput | null;
+  targetAlertPct?: number;
+  /** Refus, pause ou opposition : aucune sollicitation proactive. */
+  blockedReason?: string | null;
 };
 
 const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x));
 const fmtEur = (v: string) => `${dec(v).toDecimalPlaces(0).toNumber().toLocaleString("fr-FR").replace(/ /g, " ")} €`;
 
+/**
+ * Priorisation : potentiel (valeur estimée, échelle log), urgence (date conseillée) et probabilité de conversion (confiance).
+ * Sans valeur chiffrée connue, le potentiel est neutre (0,2) : on ne l'invente pas.
+ */
+export function scoreOpportunity(value: string | null, confidence: number, urgencyDays: number) {
+  const potential = value ? clamp(Math.log10(1 + dec(value).toNumber()) / 5) : 0.2; // ~1 pour 100 k€
+  const urgency = clamp(1 - Math.max(0, urgencyDays) / 60);
+  const probability = clamp(confidence);
+  return {
+    priority: Math.round(clamp(0.4 * potential + 0.3 * urgency + 0.3 * probability) * 100),
+    potential: Number(potential.toFixed(3)),
+    urgency: Number(urgency.toFixed(3)),
+    probability: Number(probability.toFixed(3)),
+  };
+}
+
 export function priorityScore(value: string | null, confidence: number, urgencyDays: number): number {
-  const v = value ? Math.log10(1 + dec(value).toNumber()) / 5 : 0.2; // ~1 pour 100k€
-  const urgency = clamp(1 - urgencyDays / 60);
-  return Math.round(clamp(0.45 * clamp(v) + 0.35 * confidence + 0.2 * urgency) * 100);
+  return scoreOpportunity(value, confidence, urgencyDays).priority;
 }
 
 export function detectOpportunities(input: EngineInput): OpportunityCandidate[] {
   const { today, customer, products, prices, settings } = input;
   const out: OpportunityCandidate[] = [];
-  if (customer.status === "blocked" || customer.status === "lost") return out;
+  if (customer.status === "blocked" || customer.status === "lost" || input.blockedReason) return out;
   const productById = new Map(products.map((p) => [p.id, p]));
   const summary = customerSummary(input.invoices, today);
   const habits = productHabits(input.invoices, input.lines, today);
@@ -239,6 +265,47 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
     }
   }
 
+  // 4 bis. Retour en stock — produits habituels du client redevenus disponibles
+  if (input.restocks?.length && !isDormant) {
+    const habitById = new Map(habits.map((h) => [h.productId, h]));
+    const back = input.restocks.filter((r) => {
+      const h = habitById.get(r.productId);
+      const p = productById.get(r.productId);
+      return h && h.orders >= 2 && p?.status === "active" && p.availability !== "out_of_stock" && r.restockedAt >= toIsoDate(addDays(today, -30));
+    });
+    if (back.length) {
+      let value = new D(0);
+      let priced = 0;
+      for (const r of back) {
+        const h = habitById.get(r.productId)!;
+        const pr = priceOf(r.productId, h.avgQtyPerOrder);
+        if (pr) {
+          value = value.plus(dec(pr.unitPriceHt).times(dec(h.avgQtyPerOrder)));
+          priced++;
+        }
+      }
+      const ids = back.map((r) => r.productId).sort();
+      const estimated = priced ? round2(value).toFixed(2) : null;
+      out.push({
+        customerId: customer.id,
+        type: "back_in_stock",
+        productIds: ids,
+        title: `De retour en stock : ${ids.length} référence${ids.length > 1 ? "s" : ""} habituelle${ids.length > 1 ? "s" : ""}`,
+        justification: `${ids.map((id) => productById.get(id)?.reference).join(", ")} ${ids.length > 1 ? "sont" : "est"} de nouveau disponible${ids.length > 1 ? "s" : ""} et fai${ids.length > 1 ? "saient" : "sait"} partie des achats réguliers de ${customer.name}.` +
+          (estimated ? ` Potentiel estimé sur les quantités habituelles : ${fmtEur(estimated)} HT.` : " Prix non connu : potentiel à confirmer."),
+        confidence: 0.6,
+        estimatedValueHt: estimated,
+        priority: 0,
+        recommendedAction: "Prévenir le client du retour en stock et proposer une offre de réassort.",
+        suggestedDate: today,
+        dataSources: ["relevés de stock", "historique d'achat"],
+        details: { restocks: back },
+        dedupeKey: `back:${customer.id}:${ids.join(",")}`,
+        expiresAt: expires(21),
+      });
+    }
+  }
+
   // 5. Campagne — produits d'une campagne active que le client achète déjà
   for (const c of input.activeCampaigns ?? []) {
     const relevant = c.productIds.filter((id) => boughtIds.has(id));
@@ -284,24 +351,84 @@ export function detectOpportunities(input: EngineInput): OpportunityCandidate[] 
     });
   }
 
-  // 7. Rendez-vous — client important en baisse
-  if (summary.trendPct !== null && summary.trendPct <= -30 && dec(summary.revenue12m).gte(10000) && !isDormant) {
+  // 7. Rendez-vous — client non rencontré depuis longtemps, ou dont le CA baisse fortement
+  const interval = input.meetingIntervalDays ?? 180;
+  const daysSinceMeeting = input.lastMeetingAt ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(input.lastMeetingAt)) / 86_400_000) : null;
+  const strongDecline = summary.trendPct !== null && summary.trendPct <= -30 && dec(summary.revenue12m).gte(5000);
+  const notMet = dec(summary.revenue12m).gte(10000) && (daysSinceMeeting === null || daysSinceMeeting > interval);
+  if ((strongDecline || notMet) && !isDormant) {
+    const permanents = habits.filter((h) => h.orders >= 3).length;
+    const newsCount = news.length;
+    // Format conseillé (déterministe) : showroom pour les comptes importants, visio sinon.
+    const format = dec(summary.revenue12m).gte(50000) ? "showroom" : "visio";
+    const argument = [
+      `CA facturé sur 12 mois : ${fmtEur(summary.revenue12m)} HT${summary.trendPct !== null ? ` (tendance 90 jours : ${summary.trendPct > 0 ? "+" : ""}${summary.trendPct.toLocaleString("fr-FR")} %)` : ""}.`,
+      daysSinceMeeting === null ? "Aucun rendez-vous enregistré avec ce client." : `Dernier rendez-vous il y a ${daysSinceMeeting} jours.`,
+      permanents ? `${permanents} référence(s) permanente(s) à sécuriser.` : null,
+      newsCount ? `${newsCount} nouveauté(s) adaptée(s) à présenter.` : null,
+    ].filter((x): x is string => !!x);
     out.push({
       customerId: customer.id,
       type: "appointment",
-      productIds: [],
-      title: `Activité en baisse de ${Math.abs(summary.trendPct)} % — rendez-vous conseillé`,
-      justification: `Le chiffre d'affaires des 3 derniers mois est en baisse de ${Math.abs(summary.trendPct)} % par rapport aux 3 mois précédents, pour un client à ${fmtEur(summary.revenue12m)} HT sur 12 mois.`,
-      confidence: 0.5,
+      productIds: news.slice(0, 4).map((p) => p.id).sort(),
+      title: strongDecline ? `CA en baisse de ${Math.abs(summary.trendPct!).toLocaleString("fr-FR")} % — rendez-vous conseillé` : `Client non rencontré ${daysSinceMeeting === null ? "à ce jour" : `depuis ${daysSinceMeeting} jours`} — rendez-vous conseillé`,
+      justification: argument.join(" "),
+      confidence: strongDecline ? 0.5 : 0.45,
       estimatedValueHt: null,
-      priority: priorityScore(summary.revenue12m, 0.5, 10),
-      recommendedAction: "Proposer un rendez-vous en visioconférence pour comprendre la baisse.",
+      priority: 0,
+      recommendedAction: `Proposer un rendez-vous ${format === "showroom" ? "au showroom" : "en visioconférence"} (ou par téléphone selon la préférence du client).`,
       suggestedDate: toIsoDate(addDays(today, 2)),
-      dataSources: ["factures 6 derniers mois"],
-      details: { trendPct: summary.trendPct },
+      dataSources: ["factures 12 mois", "rendez-vous", "catalogue"],
+      details: { trendPct: summary.trendPct, daysSinceMeeting, format, argument, reason: strongDecline ? "decline" : "not_met" },
       dedupeKey: `appointment:${customer.id}`,
       expiresAt: expires(30),
     });
+  }
+
+  // 8. Objectif de CA — retard à date → plan d'accélération chiffré à partir des leviers détectés
+  if (input.target) {
+    const progress = computeTargetProgress(input.invoices, input.target, today, input.targetAlertPct ?? 10);
+    if (progress.status === "behind" && progress.gapHt) {
+      const gap = dec(progress.gapHt).abs();
+      const levers = out
+        .filter((o) => o.customerId === customer.id && o.type !== "appointment")
+        .map((o) => ({ type: o.type, title: o.title, valueHt: o.estimatedValueHt }));
+      const priced = levers.filter((l) => l.valueHt);
+      const covered = priced.reduce((a, l) => a.plus(dec(l.valueHt!)), new D(0));
+      const plan = [
+        ...levers.map((l) => `${l.title}${l.valueHt ? ` (≈ ${fmtEur(l.valueHt)} HT)` : " (potentiel à confirmer)"}`),
+        out.some((o) => o.type === "appointment") ? "Rendez-vous commercial pour présenter la gamme et les nouveautés." : null,
+      ].filter((x): x is string => !!x);
+      out.push({
+        customerId: customer.id,
+        type: "target_gap",
+        productIds: [],
+        title: `Objectif CA : retard de ${fmtEur(gap.toFixed(2))} à date`,
+        justification:
+          `Réalisé ${fmtEur(progress.realizedHt)} HT pour un attendu à date de ${fmtEur(progress.expectedToDateHt!)} HT (${progress.gapPct!.toLocaleString("fr-FR")} %) sur un objectif ${progress.periodType === "year" ? "annuel" : "mensuel"} de ${fmtEur(progress.targetHt)} HT. ` +
+          (progress.forecastHt ? `Projection de fin de période au rythme actuel : ${fmtEur(progress.forecastHt)} HT. ` : "") +
+          (priced.length ? `Les leviers chiffrés couvrent ${fmtEur(covered.toFixed(2))} HT du retard.` : "Aucun levier chiffré disponible : plan à confirmer avec le commercial."),
+        confidence: 0.55,
+        // Valeur = part du retard couverte par des leviers chiffrés (jamais un montant inventé).
+        estimatedValueHt: priced.length ? round2(D.min(gap, covered)).toFixed(2) : null,
+        priority: 0,
+        recommendedAction: plan.length ? `Plan d'accélération : ${plan.join(" · ")}` : "Plan d'accélération à construire avec le commercial (aucun levier détecté).",
+        suggestedDate: today,
+        dataSources: ["objectif client", "factures de la période", progress.method === "seasonality_n1" ? "saisonnalité N-1" : "prorata temporis"],
+        details: { progress, plan, levers },
+        dedupeKey: `target:${customer.id}:${progress.periodType}:${progress.periodStart}`,
+        expiresAt: expires(14),
+      });
+    }
+  }
+
+  // Priorisation homogène (potentiel × urgence × probabilité) et rattachement à la mission
+  for (const o of out) {
+    const urgencyDays = Math.round((Date.parse(`${o.suggestedDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+    const reorderLate = o.type === "reorder" ? Math.min(0, ...((o.details.items as { nextExpected: string | null }[] | undefined) ?? []).map((i) => (i.nextExpected ? Math.round((Date.parse(`${i.nextExpected}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : 0))) : 0;
+    const scoring = scoreOpportunity(o.estimatedValueHt, o.confidence, o.type === "reorder" ? Math.max(0, urgencyDays + reorderLate) : urgencyDays);
+    o.priority = scoring.priority;
+    o.details = { ...o.details, scoring, mission: MISSION_OF[o.type] };
   }
 
   return out;

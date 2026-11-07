@@ -12,6 +12,8 @@ import { ActionButton } from "@/components/app/action-button";
 import { OPPORTUNITY_LABEL } from "@/components/app/labels";
 import { createOfferFromOpportunityAction, dismissOpportunityAction, runScanAction, runAutopilotAction } from "@/app/actions/commercial";
 import { canWrite, canManage } from "@/lib/auth/roles";
+import { MISSION_LABEL, type Mission } from "@/features/opportunities/missions";
+import { getLeaPerformance } from "@/features/dashboard/performance";
 
 export const metadata = { title: "Accueil" };
 
@@ -21,7 +23,11 @@ function greeting() {
 }
 
 export default async function HomePage() {
-  const { data, ctx } = await db(async (d, ctx) => ({ data: await getDashboard(d, ctx.org.organizationId, toIsoDate(new Date())), ctx }));
+  const { data, perf, ctx } = await db(async (d, ctx) => ({
+    data: await getDashboard(d, ctx.org.organizationId, toIsoDate(new Date())),
+    perf: await getLeaPerformance(d, ctx.org.organizationId, 90),
+    ctx,
+  }));
   const writable = canWrite(ctx.org.role);
   const firstName = (ctx.displayName ?? "").split(" ")[0];
 
@@ -61,7 +67,7 @@ export default async function HomePage() {
                 : `Aujourd'hui : ${data.autonomy.sentToday} envoi(s) automatique(s) · ${data.autonomy.scheduled} programmé(s) · ${data.autonomy.escalations} dossier(s) transféré(s) au commercial.`}
             </p>
           </div>
-          {canManage(ctx.org.role) && data.autonomy.level !== "supervised" && !data.autonomy.paused ? (
+          {canManage(ctx.org.role) && !data.autonomy.paused ? (
             <ActionButton variant="lea" action={runAutopilotAction} pendingLabel="LÉA travaille…">
               <Sparkles /> Lancer LÉA maintenant
             </ActionButton>
@@ -119,9 +125,9 @@ export default async function HomePage() {
           <CardHeader>
             <div className="flex items-center gap-2.5">
               <LeaMark size={22} />
-              <CardTitle>Opportunités du jour</CardTitle>
+              <CardTitle>Les priorités de LÉA aujourd&apos;hui</CardTitle>
             </div>
-            <span className="text-[12px] text-faint">Classées par priorité</span>
+            <span className="text-[12px] text-faint">Potentiel × urgence × probabilité de conversion</span>
           </CardHeader>
           <CardContent className="space-y-2.5 px-3 pb-3">
             {data.opportunities.length === 0 ? <p className="px-2 py-6 text-center text-sm text-subtle">Rien à signaler aujourd&apos;hui.</p> : null}
@@ -133,16 +139,31 @@ export default async function HomePage() {
                       <Link href={`/clients/${o.customerId}`} className="text-[14px] font-semibold hover:text-primary">
                         {o.customerName}
                       </Link>
+                      {o.mission ? <Badge tone="outline">{MISSION_LABEL[o.mission as Mission] ?? o.mission}</Badge> : null}
                       <Badge tone="primary">{OPPORTUNITY_LABEL[o.type] ?? o.type}</Badge>
-                      {o.status === "in_progress" ? <Badge tone="info">Offre en cours</Badge> : null}
+                      {o.status === "in_progress" ? <Badge tone="info">En cours</Badge> : null}
                     </div>
                     <p className="mt-1 text-[13.5px] font-medium">« {o.title} »</p>
                     <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-subtle">{o.justification}</p>
                   </div>
                   <div className="text-right">
-                    <p className="tabular text-[15px] font-semibold">{o.estimatedValueHt ? formatMoney(o.estimatedValueHt, "EUR", { compact: true }) : "—"}</p>
-                    <p className="text-[11px] text-faint">{o.estimatedValueHt ? "potentiel estimé HT" : "potentiel non estimé"}</p>
-                    <p className="mt-1 text-[11px] text-faint">Confiance {Math.round(dec(o.confidence).toNumber() * 100)} %</p>
+                    <p className="tabular text-[15px] font-semibold">{o.estimatedValueHt ? formatMoney(o.estimatedValueHt, "EUR", { compact: true }) : "À confirmer"}</p>
+                    <p className="text-[11px] text-faint">{o.estimatedValueHt ? "potentiel estimé HT" : "potentiel non chiffré"}</p>
+                    {o.scoring ? (
+                      <div className="mt-1.5 space-y-0.5" aria-label="Facteurs de priorité">
+                        {([["Potentiel", o.estimatedValueHt ? o.scoring.potential : null], ["Urgence", o.scoring.urgency], ["Probabilité", o.scoring.probability]] as const).map(([label, v]) => (
+                          <div key={label} className="flex items-center justify-end gap-1.5 text-[10.5px] text-faint">
+                            <span>{label}</span>
+                            <span className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
+                              <span className="block h-full rounded-full bg-primary/70" style={{ width: `${Math.round((v ?? 0) * 100)}%` }} />
+                            </span>
+                            <span className="w-7 text-right tabular">{v === null ? "—" : `${Math.round(v * 100)}`}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-faint">Confiance {Math.round(dec(o.confidence).toNumber() * 100)} %</p>
+                    )}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -155,7 +176,7 @@ export default async function HomePage() {
                         Voir l&apos;offre <ArrowRight />
                       </Link>
                     </Button>
-                  ) : writable && ["reorder", "dormant_customer", "new_product", "cross_sell", "campaign"].includes(o.type) ? (
+                  ) : writable && ["reorder", "dormant_customer", "new_product", "cross_sell", "back_in_stock", "campaign"].includes(o.type) ? (
                     <ActionButton size="sm" action={createOfferFromOpportunityAction.bind(null, o.id)} pendingLabel="LÉA prépare l'offre…">
                       Préparer l&apos;offre <ArrowRight />
                     </ActionButton>
@@ -249,6 +270,40 @@ export default async function HomePage() {
           </Card>
         </div>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Résultats de LÉA par mission (90 jours)</CardTitle>
+          <span className="text-[12px] text-faint">CA attribuable : factures des produits proposés, 45 jours après l&apos;envoi, plafonné à l&apos;offre</span>
+        </CardHeader>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]" data-testid="lea-performance">
+            <thead className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
+              <tr>
+                <th className="px-5 py-2 font-medium">Mission</th>
+                <th className="px-3 py-2 text-right font-medium">Détectées</th>
+                <th className="px-3 py-2 text-right font-medium">Traitées</th>
+                <th className="px-3 py-2 text-right font-medium">Offres envoyées</th>
+                <th className="px-3 py-2 text-right font-medium">Conversion</th>
+                <th className="px-3 py-2 text-right font-medium">Commandes HT</th>
+                <th className="px-5 py-2 text-right font-medium">CA facturé attribuable</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perf.map((m) => (
+                <tr key={m.mission} className="border-b border-border/70 last:border-0">
+                  <td className="px-5 py-2 font-medium">{MISSION_LABEL[m.mission]}</td>
+                  <td className="tabular px-3 py-2 text-right">{m.detected}</td>
+                  <td className="tabular px-3 py-2 text-right">{m.actioned}</td>
+                  <td className="tabular px-3 py-2 text-right">{m.offersSent}</td>
+                  <td className="tabular px-3 py-2 text-right">{m.conversionPct === null ? "—" : `${m.conversionPct} %`}</td>
+                  <td className="tabular px-3 py-2 text-right">{formatMoney(m.ordersHt, "EUR", { compact: true })}</td>
+                  <td className="tabular px-5 py-2 text-right">{formatMoney(m.invoicedHt, "EUR", { compact: true })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }

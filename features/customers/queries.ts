@@ -1,5 +1,7 @@
 import type { Db } from "@/lib/database/client";
 import { customerSummary, productHabits } from "@/features/invoices/analytics";
+import { computeTargetProgress, currentPeriods } from "./targets";
+import { permanentProducts, MISSION_OF } from "@/features/opportunities/missions";
 
 export const PAGE_SIZE = 25;
 
@@ -30,7 +32,7 @@ export async function listCustomers(db: Db, orgId: string, opts: { q?: string; s
 }
 
 export async function getCustomer(db: Db, orgId: string, id: string, today: string) {
-  const c = (await db.query<{ id: string; external_code: string | null; legal_name: string; trade_name: string | null; country: string | null; address_line1: string | null; postal_code: string | null; city: string | null; phone: string | null; email: string | null; website: string | null; segment: string | null; status: string; payment_terms: string | null; min_order_amount: string | null; franco_amount: string | null; owner: string | null; notes: string | null }>(
+  const c = (await db.query<{ id: string; external_code: string | null; legal_name: string; trade_name: string | null; country: string | null; address_line1: string | null; postal_code: string | null; city: string | null; phone: string | null; email: string | null; website: string | null; segment: string | null; status: string; payment_terms: string | null; min_order_amount: string | null; franco_amount: string | null; owner: string | null; notes: string | null; do_not_solicit: boolean; solicit_paused_until: string | null }>(
     `select c.*, m.display_name as owner from customers c left join organization_members m on m.organization_id = c.organization_id and m.user_id = c.owner_user_id
      where c.id = $1 and c.organization_id = $2`, [id, orgId])).rows[0];
   if (!c) return null;
@@ -47,14 +49,40 @@ export async function getCustomer(db: Db, orgId: string, id: string, today: stri
     `select ct.id, ct.salutation, ct.first_name, ct.last_name, ct.email, ct.phone, cc.job_function, cc.is_primary, ct.consent_email,
             (select count(*)::int - 1 from customer_contacts x where x.contact_id = ct.id) as shared_with
      from customer_contacts cc join contacts ct on ct.id = cc.contact_id where cc.customer_id = $1 order by cc.is_primary desc`, [id])).rows;
-  const opportunities = (await db.query<{ id: string; type: string; title: string; justification: string; estimated_value_ht: string | null; confidence: string; status: string; recommended_action: string; offer_id: string | null; data_sources: string[] }>(
-    `select id, type, title, justification, estimated_value_ht, confidence, status, recommended_action, offer_id, data_sources from opportunities
+  const opportunities = (await db.query<{ id: string; type: string; title: string; justification: string; estimated_value_ht: string | null; confidence: string; status: string; recommended_action: string; offer_id: string | null; data_sources: string[]; product_ids: string[]; details: { mission?: string; plan?: string[]; format?: string; argument?: string[] } }>(
+    `select id, type, title, justification, estimated_value_ht, confidence, status, recommended_action, offer_id, data_sources, product_ids, details from opportunities
      where customer_id = $1 and status in ('open','in_progress') order by priority desc`, [id])).rows;
   const offers = (await db.query<{ id: string; number: string; offer_date: string; status: string; total_ht: string }>(
     `select id, number, offer_date, status, total_ht from offers where customer_id = $1 order by created_at desc limit 10`, [id])).rows;
   const conversations = (await db.query<{ id: string; channel: string; subject: string | null; status: string; last_message_at: string | null; messages: number }>(
     `select c.id, c.channel, c.subject, c.status, c.last_message_at, (select count(*)::int from messages m where m.conversation_id = c.id) as messages
      from conversations c where c.customer_id = $1 order by c.last_message_at desc nulls last limit 10`, [id])).rows;
+  // ---- Croissance du client : 6 missions ----
+  const periods = currentPeriods(today);
+  const targetRows = (await db.query<{ id: string; period_type: "year" | "month"; period_start: string; target_ht: string; notes: string | null }>(
+    `select id, period_type, period_start, target_ht, notes from customer_targets where customer_id = $1 and ((period_type = 'year' and period_start = $2) or (period_type = 'month' and period_start = $3)) order by period_type desc`,
+    [id, periods.year, periods.month])).rows;
+  const alert = (await db.query<{ target_alert_pct: string }>(`select target_alert_pct from organization_settings where organization_id = $1`, [orgId])).rows[0]?.target_alert_pct ?? "10";
+  const targets = targetRows.map((t) => ({ id: t.id, notes: t.notes, progress: computeTargetProgress(inv, { periodType: t.period_type, periodStart: t.period_start, targetHt: t.target_ht }, today, Number(alert)) }));
+  const caseInfo = new Map((await db.query<{ id: string; units_per_case: number | null; min_order_qty: number | null }>(
+    `select id, units_per_case, min_order_qty from products where id = any($1::uuid[])`, [productIds])).rows.map((p) => [p.id, { unitsPerCase: p.units_per_case, minOrderQty: p.min_order_qty }]));
+  const permanents = permanentProducts(habits, caseInfo).map((h) => ({ ...h, product: products.get(h.productId) ?? null }));
+  const recoProducts = async (types: string[]) => {
+    const ids = [...new Set(opportunities.filter((o) => types.includes(o.type)).flatMap((o) => o.product_ids ?? []))];
+    if (!ids.length) return [];
+    return (await db.query<{ id: string; reference: string; name: string; availability: string; sale_price_ht: string | null; is_new: boolean }>(
+      `select id, reference, name, availability, sale_price_ht, is_new from products where id = any($1::uuid[]) order by name`, [ids])).rows;
+  };
+  const complementary = await recoProducts(["cross_sell", "back_in_stock"]);
+  const newProducts = await recoProducts(["new_product"]);
+  const lastMeeting = (await db.query<{ starts_at: string; kind: string }>(
+    `select starts_at, kind from appointments where customer_id = $1 and status = 'done' order by starts_at desc limit 1`, [id])).rows[0] ?? null;
+  const nextMeeting = (await db.query<{ starts_at: string; kind: string; status: string }>(
+    `select starts_at, kind, status from appointments where customer_id = $1 and status in ('proposed','confirmed') and starts_at >= now() order by starts_at limit 1`, [id])).rows[0] ?? null;
+  // Plan de développement : leviers ouverts classés par priorité (valeurs estimées seulement si un prix est connu).
+  const plan = opportunities
+    .filter((o) => o.type !== "target_gap")
+    .map((o) => ({ id: o.id, type: o.type, mission: MISSION_OF[o.type] ?? "follow_up", title: o.title, action: o.recommended_action, valueHt: o.estimated_value_ht, offerId: o.offer_id, status: o.status }));
   const memory = (await db.query<{ id: string; kind: string; certainty: string; content: string; source: string; created_at: string; valid_until: string | null }>(
     `select id, kind, certainty, content, source, created_at, valid_until from agent_memory where customer_id = $1 order by created_at desc limit 12`, [id])).rows;
   return {
@@ -68,5 +96,6 @@ export async function getCustomer(db: Db, orgId: string, id: string, today: stri
     offers,
     conversations,
     memory,
+    growth: { targets, permanents, complementary, newProducts, lastMeeting, nextMeeting, plan, targetGap: opportunities.find((o) => o.type === "target_gap") ?? null },
   };
 }

@@ -1,5 +1,21 @@
 # Le cerveau de LÉA
 
+## Les 6 missions permanentes (quotidiennes, pour chaque client)
+| # | Mission | Détection déterministe | Action de LÉA |
+|---|---|---|---|
+| 1 | Réactivation | dernière facture vs fréquence habituelle (> max(seuil, 2,5 × cycle)) | offre personnalisée sur les références habituelles |
+| 2 | Permanents | références achetées ≥ 3 fois, cycle ≤ 120 j, régulières (CV ≤ 0,6) ; échéance = dernier achat + cycle | offre de réassort, quantités habituelles arrondies au colis |
+| 3 | Complémentaires & retours en stock | co-achats (lift ≥ 2) ; produit habituel redevenu disponible (relevé à 0 puis > 0 sur 45 j) | offre additionnelle / avertissement retour en stock |
+| 4 | Nouveautés | nouveautés < 120 j dans les catégories ≥ 25 % des achats du client | offre découverte + **catalogue personnalisé** (studio créatif) |
+| 5 | Rendez-vous | compte ≥ 10 k€/an non rencontré depuis `meeting_interval_days` (180 j), ou CA −30 % sur 90 j | invitation visio / showroom (ou tâche d'appel si préférence téléphone) ; argumentaire chiffré au commercial |
+| 6 | Objectifs de CA | réalisé vs attendu à date (saisonnalité N-1 ou prorata), alerte au-delà de `target_alert_pct` | plan d'accélération chiffré par les leviers détectés, tâche « plan » au commercial |
+
+Priorisation commune : **potentiel** (valeur estimée, log) × **urgence** (date conseillée / retard) × **probabilité** (confiance),
+stockée dans `opportunities.details.scoring` ; mission dans `details.mission`. Sans valeur chiffrée : « À confirmer », potentiel neutre.
+Garde-fous : anti-doublons (`dedupe_key`), une sollicitation proactive par client tous les `contact_cooldown_days` (7 j),
+pause de `refusal_cooldown_days` (60 j) après un refus, « ne plus solliciter », préférence de canal, consentements, relances bornées.
+En mode **supervisé** (V1), LÉA prépare chaque jour offres, supports, invitations et plans ; rien ne part sans validation humaine.
+
 ## Cinq couches
 1. **Perception** — lecture sous RLS des clients, factures et lignes, produits, tarifs, stocks, offres, conversations, campagnes.
 2. **Mémoire** — `agent_memory` par organisation et par client, avec niveau de certitude (`verified_fact`, `declared`, `hypothesis`)

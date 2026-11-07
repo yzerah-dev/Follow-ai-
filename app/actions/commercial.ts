@@ -165,6 +165,10 @@ const settingsSchema = z.object({
   offerValidityDays: z.coerce.number().int().min(1).max(365),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   companyName: z.string().trim().min(1).max(120),
+  meetingIntervalDays: z.coerce.number().int().min(30).max(1000),
+  contactCooldownDays: z.coerce.number().int().min(0).max(90),
+  refusalCooldownDays: z.coerce.number().int().min(0).max(365),
+  targetAlertPct: z.coerce.number().min(0).max(100),
 });
 
 export async function updateSettingsAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
@@ -172,8 +176,10 @@ export async function updateSettingsAction(_: ActionResult | null, form: FormDat
     const s = settingsSchema.parse(Object.fromEntries(form));
     await db.query(
       `update organization_settings set max_auto_discount_pct = $2, dormant_after_days = $3, reorder_lookahead_days = $4, offer_validity_days = $5,
-         brand = brand || jsonb_build_object('primaryColor', $6::text, 'companyName', $7::text) where organization_id = $1`,
-      [ctx.org.organizationId, s.maxAutoDiscountPct, s.dormantAfterDays, s.reorderLookaheadDays, s.offerValidityDays, s.primaryColor, s.companyName],
+         brand = brand || jsonb_build_object('primaryColor', $6::text, 'companyName', $7::text),
+         meeting_interval_days = $8, contact_cooldown_days = $9, refusal_cooldown_days = $10, target_alert_pct = $11 where organization_id = $1`,
+      [ctx.org.organizationId, s.maxAutoDiscountPct, s.dormantAfterDays, s.reorderLookaheadDays, s.offerValidityDays, s.primaryColor, s.companyName,
+        s.meetingIntervalDays, s.contactCooldownDays, s.refusalCooldownDays, s.targetAlertPct],
     );
     await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "settings.updated", undefined, s);
     return "Paramètres enregistrés.";
@@ -277,5 +283,46 @@ export async function sendManualReplyAction(conversationId: string, body: string
   }, { key: "manual", limit: 30 });
   revalidatePath(`/conversations/${conversationId}`);
   revalidatePath("/conversations");
+  return r;
+}
+
+const targetSchema = z.object({
+  customerId: z.uuid(),
+  periodType: z.enum(["year", "month"]),
+  targetHt: z.string().trim().regex(/^\d{1,9}([.,]\d{1,2})?$/, "Montant invalide"),
+});
+
+/** Mission 6 : objectif de CA d'un client pour l'année ou le mois en cours (fixé par un humain). */
+export async function setCustomerTargetAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const parsed = targetSchema.safeParse(Object.fromEntries(form));
+  if (!parsed.success) return { ok: false, error: "Objectif invalide : indiquez un montant HT." };
+  const r = await run(canWrite, async (db, ctx) => {
+    const { customerId, periodType } = parsed.data;
+    const amount = parsed.data.targetHt.replace(",", ".");
+    const today = toIsoDate(new Date());
+    const periodStart = periodType === "year" ? `${today.slice(0, 4)}-01-01` : `${today.slice(0, 7)}-01`;
+    await db.query(
+      `insert into customer_targets (organization_id, customer_id, period_type, period_start, target_ht, created_by) values ($1,$2,$3,$4,$5,$6)
+       on conflict (organization_id, customer_id, period_type, period_start) do update set target_ht = excluded.target_ht`,
+      [ctx.org.organizationId, customerId, periodType, periodStart, amount, ctx.userId],
+    );
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "customer.target_set", { type: "customer", id: customerId }, { periodType, periodStart, amount });
+    // Recalcul immédiat : le plan d'accélération apparaît si le client est en retard.
+    await runOpportunityScan(db, ctx.org.organizationId, today, ctx.userId);
+    return "Objectif enregistré.";
+  });
+  revalidatePath(`/clients/${parsed.data.customerId}`);
+  return r;
+}
+
+/** Respect des préférences : le client ne souhaite plus être sollicité (ou de nouveau). */
+export async function setDoNotSolicitAction(customerId: string, value: boolean) {
+  const r = await run(canWrite, async (db, ctx) => {
+    await db.query(`update customers set do_not_solicit = $3 where id = $1 and organization_id = $2`, [uuid.parse(customerId), ctx.org.organizationId, z.boolean().parse(value)]);
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, value ? "customer.do_not_solicit" : "customer.solicit_allowed", { type: "customer", id: customerId });
+    await runOpportunityScan(db, ctx.org.organizationId, toIsoDate(new Date()), ctx.userId);
+    return value ? "LÉA ne sollicitera plus ce client." : "Sollicitations réactivées.";
+  });
+  revalidatePath(`/clients/${customerId}`);
   return r;
 }

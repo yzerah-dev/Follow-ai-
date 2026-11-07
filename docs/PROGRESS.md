@@ -1,6 +1,18 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-07 — discussions email + WhatsApp, mode autonome._
+_Mise à jour : 2026-11-08 — cerveau commercial : 6 missions permanentes._
+
+## Cerveau commercial — 6 missions (2026-11-08)
+- Missions quotidiennes : réactivation, permanents, complémentaires & **retours en stock**, nouveautés (+ catalogue personnalisé),
+  **rendez-vous** (non rencontrés / baisse de CA, invitation visio-téléphone-showroom, argumentaire au commercial),
+  **objectifs de CA** (réalisé, attendu à date, écart, prévision, plan d'accélération).
+- Fiche client : objectif CA (saisie), réalisé, écart, prévision, produits permanents (quantité conseillée), complémentaires,
+  nouveautés recommandées, dernier / prochain rendez-vous, plan de développement, « ne plus solliciter ».
+- Accueil : « Les priorités de LÉA aujourd'hui » (potentiel / urgence / probabilité) et résultats par mission (conversion, CA attribuable).
+- Garde-fous : anti-doublons, pression commerciale (1 sollicitation / 7 j), pause après refus (60 j), préférences de canal.
+- Mode supervisé : LÉA prépare désormais chaque jour (offres, supports, invitations, plans) au lieu de s'arrêter à l'analyse.
+- **Point ouvert** : le cahier des charges demande la validation humaine des envois en V1 alors que JONAS est en mode autonome
+  (décision du 2026-11-07) — en attente d'arbitrage client.
 
 ## Discussions multicanales (2026-11-07)
 - **Conversations** : boîte unifiée filtrable (Toutes / Email / WhatsApp / À traiter), fil en bulles, badges (envoyé seul par LÉA,
@@ -52,13 +64,13 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 - Données : 2 organisations fictives (`is_demo`, bandeau), 100 clients, 200 produits, ~1 700 factures / ~9 300 lignes par organisation,
   visuels produits de démonstration (dégradés étiquetés).
 
-## Tests exécutés (2026-11-07)
+## Tests exécutés (2026-11-08)
 | Suite | Résultat |
 |---|---|
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur, 0 avertissement |
-| `npm run test` | ✅ 69/69 |
-| `npm run test:integration` (PostgreSQL 16) | ✅ 41/41 (scénario supervisé, 9 autonomie, 10 discussions WhatsApp/email, 18 RLS, 3 imports) |
+| `npm run test` | ✅ 80/80 |
+| `npm run test:integration` (PostgreSQL 16) | ✅ 51/51 (scénario supervisé, 9 autonomie, 10 discussions, 9 missions, 19 RLS, 3 imports) |
 | `npm run build` | ✅ |
 | `npm run e2e` (Playwright, Chromium) | ✅ 5/5 (dont mode autonome et discussion WhatsApp via l'interface) |
 

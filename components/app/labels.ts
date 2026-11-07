@@ -5,6 +5,8 @@ export const OPPORTUNITY_LABEL: Record<string, string> = {
   dormant_customer: "Client dormant",
   new_product: "Nouveauté",
   cross_sell: "Vente complémentaire",
+  back_in_stock: "Retour en stock",
+  target_gap: "Objectif CA en retard",
   campaign: "Campagne",
   unclosed_offer: "Offre à relancer",
   appointment: "Rendez-vous",

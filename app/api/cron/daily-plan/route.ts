@@ -29,8 +29,8 @@ export async function GET(req: Request) {
         );
         if (!lock.rowCount) return { skipped: "déjà exécuté aujourd'hui" };
         const cfg = await loadAutonomy(db, o.id);
-        // Mode autonome / semi-autonome : LÉA prépare ET envoie ; sinon elle prépare seulement.
-        return cfg.level !== "supervised" && !cfg.paused ? runAutopilot(db, o.id) : runOpportunityScan(db, o.id, today);
+        // Les 6 missions tournent chaque jour : en autonome LÉA envoie ce qui est permis ; en supervisé tout attend une validation.
+        return cfg.paused ? runOpportunityScan(db, o.id, today) : runAutopilot(db, o.id);
       });
     } catch (e) {
       results[o.id] = { error: e instanceof Error ? e.message : "erreur" };

@@ -318,6 +318,41 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
   await insertMany(db, "invoices", invCols, invRows.filter((x) => x[8] === "credit_note"));
   await insertMany(db, "invoice_lines", ["organization_id", "invoice_id", "line_no", "product_id", "product_reference", "description", "quantity", "unit", "unit_price_ht", "discount_pct", "vat_rate", "line_total_ht", "units_per_case"], lineRows);
 
+  // ---------------- Missions : objectifs de CA, rendez-vous passés, retours en stock ----------------
+  const rev12 = new Map<string, number>();
+  const since = toIsoDate(addDays(today, -365));
+  for (const x of invRows) {
+    if (x[9] === "cancelled" || (x[4] as string) <= since) continue;
+    const sign = x[8] === "credit_note" ? -1 : 1;
+    rev12.set(x[3] as string, (rev12.get(x[3] as string) ?? 0) + sign * Number(x[5]));
+  }
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const targetRows: unknown[][] = [];
+  customers.forEach((cu, i) => {
+    const rev = rev12.get(cu.id) ?? 0;
+    if (rev < 2000 || (i % 2 === 1 && cu.profile !== "hero")) return; // un client sur deux a un objectif
+    const factor = cu.profile === "hero" ? 1.25 : cu.profile === "declining" ? 1.15 : 0.95 + r.next() * 0.3;
+    targetRows.push([orgId, cu.id, "year", yearStart, (Math.round((rev * factor) / 100) * 100).toFixed(2), commercialIds[0]]);
+  });
+  await insertMany(db, "customer_targets", ["organization_id", "customer_id", "period_type", "period_start", "target_ht", "created_by"], targetRows);
+  const apptRows: unknown[][] = [];
+  customers.forEach((cu) => {
+    if (cu.profile === "hero" || !r.chance(0.45)) return;
+    const d = addDays(today, -r.int(20, 420));
+    d.setUTCHours(r.pick([8, 9, 13, 14]), 0, 0, 0);
+    apptRows.push([orgId, cu.id, r.pick(["visio", "showroom", "call", "visit"]), d.toISOString(), "done", "Rendez-vous de démonstration"]);
+  });
+  await insertMany(db, "appointments", ["organization_id", "customer_id", "kind", "starts_at", "status", "notes"], apptRows);
+  // Retours en stock : produits très achetés, en rupture il y a 3 semaines et de nouveau disponibles
+  const freq = new Map<string, number>();
+  for (const l of lineRows) freq.set(l[3] as string, (freq.get(l[3] as string) ?? 0) + 1);
+  const restocked = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id).filter((id) => !customers[0]!.basket.some((p) => p.id === id)).slice(3, 9);
+  for (const pid of restocked) {
+    await db.query(`insert into inventory_snapshots (organization_id, product_id, qty_on_hand, qty_available, captured_at, source) values ($1,$2,0,0,$3,'demo')`, [orgId, pid, addDays(today, -21).toISOString()]);
+    await db.query(`insert into inventory_snapshots (organization_id, product_id, qty_on_hand, qty_available, captured_at, source) values ($1,$2,480,460,$3,'demo')`, [orgId, pid, addDays(today, -1).toISOString()]);
+    await db.query(`update products set availability = 'in_stock', available_from = null where id = $1`, [pid]);
+  }
+
   // ---------------- Campagnes ----------------
   const camp = await db.query<{ id: string }>(
     `insert into campaigns (organization_id, name, description, starts_on, ends_on, discount_pct, status, target_categories)
@@ -341,7 +376,7 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
   ];
   // Modèles WhatsApp déclarés (en réel : à faire approuver par Meta avec les textes de features/conversations/templates.ts)
   await insertMany(db, "communication_connections", ["organization_id", "channel", "provider", "status", "simulation_enabled", "display_name", "config"],
-    conns.map((x) => [orgId, ...x, x[0] === "whatsapp" ? { approvedTemplates: ["offre_disponible", "relance_offre"], templatesStatus: x[1] === "simulated" ? "déclarés (simulation)" : "à soumettre à Meta" } : {}]));
+    conns.map((x) => [orgId, ...x, x[0] === "whatsapp" ? { approvedTemplates: ["offre_disponible", "relance_offre", "proposition_rdv"], templatesStatus: x[1] === "simulated" ? "déclarés (simulation)" : "à soumettre à Meta" } : {}]));
 
   // ---------------- Conversations historiques simulées ----------------
   for (const cu of customers.slice(1, 6)) {

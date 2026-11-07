@@ -15,6 +15,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { ActionButton } from "@/components/app/action-button";
 import { AVAILABILITY, CUSTOMER_STATUS, OFFER_STATUS, OPPORTUNITY_LABEL, PAYMENT_STATUS } from "@/components/app/labels";
 import { createOfferForCustomerAction, createOfferFromOpportunityAction } from "@/app/actions/commercial";
+import { GrowthSection } from "./growth-section";
 
 const CERTAINTY: Record<string, { label: string; tone: "success" | "info" | "warning" }> = {
   verified_fact: { label: "Fait vérifié", tone: "success" },
@@ -67,7 +68,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             <Button asChild variant="secondary">
               <Link href={`/offres/${next.offer_id}`}>Voir l&apos;offre</Link>
             </Button>
-          ) : writable && ["reorder", "dormant_customer", "new_product", "cross_sell", "campaign"].includes(next.type) ? (
+          ) : writable && ["reorder", "dormant_customer", "new_product", "cross_sell", "back_in_stock", "campaign"].includes(next.type) ? (
             <ActionButton action={createOfferFromOpportunityAction.bind(null, next.id)} pendingLabel="Préparation…">
               Préparer l&apos;offre
             </ActionButton>
@@ -79,8 +80,10 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <Stat label="CA 12 mois HT" value={formatMoney(s.revenue12m, "EUR", { compact: true })} hint={dec(s.revenuePrev12m).gt(0) ? `12 mois précédents : ${formatMoney(s.revenuePrev12m, "EUR", { compact: true })}` : "Net des avoirs, hors annulations"} />
         <Stat label="Dernier achat" value={s.lastPurchase ? formatRelative(s.lastPurchase) : "—"} hint={s.lastPurchase ? formatDate(s.lastPurchase) : "Aucune facture"} />
         <Stat label="Fréquence d'achat" value={s.meanIntervalDays ? `${s.meanIntervalDays} j` : "—"} hint={`${s.invoiceCount} facture(s)`} />
-        <Stat label="Panier moyen HT" value={s.avgBasket ? formatMoney(s.avgBasket, "EUR", { compact: true }) : "—"} hint={s.trendPct !== null ? `Tendance 90 j : ${s.trendPct > 0 ? "+" : ""}${s.trendPct} %` : undefined} />
+        <Stat label="Panier moyen HT" value={s.avgBasket ? formatMoney(s.avgBasket, "EUR", { compact: true }) : "—"} hint={s.trendPct !== null ? `Tendance 90 j : ${s.trendPct > 0 ? "+" : ""}${s.trendPct.toLocaleString("fr-FR")} %` : undefined} />
       </div>
+
+      <GrowthSection customerId={c.id} growth={data.growth} writable={writable} revenue12m={s.revenue12m} doNotSolicit={c.do_not_solicit} pausedUntil={c.solicit_paused_until} />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         <div className="space-y-5">
@@ -108,7 +111,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
 
           <Card>
             <CardHeader>
-              <CardTitle>Produits habituels</CardTitle>
+              <CardTitle>Historique des produits achetés</CardTitle>
               <span className="text-[12px] text-faint">Calculés depuis les lignes de factures</span>
             </CardHeader>
             <Table>

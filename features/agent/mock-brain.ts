@@ -247,3 +247,37 @@ export function mockFollowup(ctx: FollowupCtx): EmailDraft {
     arguments: [`Relance n° ${ctx.attempt}`],
   };
 }
+
+export type MeetingCtx = {
+  contact: ContactCtx;
+  channel: "email" | "whatsapp";
+  format: "visio" | "showroom" | "phone";
+  newProductNames: string[];
+  permanentsCount: number;
+  senderName: string;
+  companyName: string;
+};
+
+export const MEETING_FORMAT_LABEL = { visio: "en visioconférence", showroom: "dans notre showroom", phone: "par téléphone" } as const;
+
+/** Proposition de rendez-vous : contexte utile au client, sans exposer d'analyse interne (baisse de CA, etc.), sans créneau inventé. */
+export function mockMeetingProposal(ctx: MeetingCtx): EmailDraft {
+  const where = MEETING_FORMAT_LABEL[ctx.format];
+  const reasons = [
+    ctx.permanentsCount ? `faire le point sur vos ${ctx.permanentsCount} références habituelles` : "faire le point sur vos besoins",
+    ctx.newProductNames.length ? `vous présenter ${ctx.newProductNames.length === 1 ? "une nouveauté adaptée" : `${ctx.newProductNames.length} nouveautés adaptées`} à votre assortiment (${ctx.newProductNames.slice(0, 3).join(", ")})` : null,
+  ].filter(Boolean).join(" et ");
+  const body = ctx.channel === "whatsapp"
+    ? `${greeting(ctx.contact).replace(/,$/, " !")}\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?\n— LÉA, ${ctx.companyName}`
+    : `${greeting(ctx.contact)}
+
+Je vous propose un rendez-vous de 20 minutes ${where} pour ${reasons}.
+
+Quel créneau vous conviendrait cette semaine ou la suivante ? Je m'adapte à vos disponibilités.
+
+Bien cordialement,
+
+${ctx.senderName}
+${ctx.companyName}`;
+  return { subject: "Un point ensemble ?", body, personalizationBasis: ctx.permanentsCount ? "purchase_history" : "generic", arguments: [reasons] };
+}

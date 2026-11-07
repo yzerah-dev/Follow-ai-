@@ -45,3 +45,18 @@ toujours libellée « estimée », jamais présentée comme une commande). Recal
 
 ## Distinctions financières
 Facture ≠ commande (`order_requests`) ≠ encaissement (`payment_status`). Avoirs soustraits, factures annulées exclues.
+
+## Objectifs de CA (mission 6 — `features/customers/targets.ts`)
+- Objectif annuel (1er janvier) ou mensuel (1er du mois) fixé par un humain (l'agent ne peut pas, RLS).
+- **CA réalisé** = factures émises − avoirs, hors annulations, du début de période à aujourd'hui.
+- **Attendu à date** = objectif × part écoulée : saisonnalité N-1 du client si l'historique couvre la période précédente
+  (première facture ≤ 45 j / 7 j après son début), sinon prorata temporis.
+- **Écart** = réalisé − attendu ; « En retard » au-delà de `target_alert_pct` (10 %), « À confirmer » avant 5 % de la période.
+- **Prévision de fin de période** = réalisé / part écoulée (rythme actuel).
+- **Plan d'accélération** : leviers ouverts du client (réassort, réactivation, complémentaires, nouveautés…) ; la valeur affichée est
+  la part du retard couverte par des leviers chiffrés, jamais un montant inventé.
+
+## Mesure des résultats (`features/dashboard/performance.ts`)
+Par mission, sur 90 jours : opportunités détectées / traitées, offres envoyées, gagnées, taux de conversion,
+**commandes HT** (demandes de commande issues des offres), **CA facturé attribuable** = lignes de factures du client sur les produits de
+l'offre émises dans les 45 jours suivant l'envoi, avoirs déduits, plafonné au montant de l'offre.

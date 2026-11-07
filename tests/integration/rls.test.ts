@@ -12,7 +12,7 @@ const TENANT_TABLES = [
   "customers", "contacts", "customer_contacts", "products", "product_images", "product_prices", "inventory_snapshots", "invoices",
   "invoice_lines", "campaigns", "campaign_products", "opportunities", "offers", "offer_lines", "conversations", "messages",
   "communication_connections", "agent_memory", "agent_runs", "agent_decisions", "creative_templates", "organization_settings",
-  "organization_members", "approvals", "followup_tasks", "generated_assets", "imports", "suppression_entries",
+  "organization_members", "approvals", "followup_tasks", "generated_assets", "imports", "suppression_entries", "customer_targets",
 ];
 
 beforeAll(async () => {
@@ -126,6 +126,14 @@ describe("Autonomie", () => {
     const paused = await privileged(async (c) => (await c.query<{ p: boolean }>(`select autonomy_paused p from organization_settings where organization_id = $1`, [I.orgA])).rows[0]!.p);
     expect(paused).toBe(true);
     await withUser(I.alice, (db) => db.query(`select app.set_autonomy_paused($1, false)`, [I.orgA]));
+  });
+  it("les objectifs de CA sont fixés par des humains : ni l'agent ni la lecture seule", async () => {
+    const cid = await withAgent(I.orgA, async (db) => (await db.query<{ id: string }>(`select id from customers limit 1`)).rows[0]!.id);
+    await expectDenied(withAgent(I.orgA, (db) => db.query(`insert into customer_targets (organization_id, customer_id, period_type, period_start, target_ht) values ($1,$2,'month','2026-11-01',1000)`, [I.orgA, cid])));
+    await expectDenied(withUser(I.diane, (db) => db.query(`insert into customer_targets (organization_id, customer_id, period_type, period_start, target_ht) values ($1,$2,'month','2026-11-01',1000)`, [I.orgA, cid])));
+    const changed = await withAgent(I.orgA, async (db) => (await db.query(`update customer_targets set target_ht = 1`)).rowCount);
+    expect(changed).toBe(0);
+    await withUser(I.bruno, (db) => db.query(`insert into customer_targets (organization_id, customer_id, period_type, period_start, target_ht) values ($1,$2,'month','2026-11-01',1000)`, [I.orgA, cid]));
   });
   it("l'agent ne peut pas modifier son propre niveau d'autonomie", async () => {
     const r = await withAgent(I.orgA, async (db) => (await db.query(`update organization_settings set autonomy_level = 'autonomous', autonomy_paused = false`)).rowCount);

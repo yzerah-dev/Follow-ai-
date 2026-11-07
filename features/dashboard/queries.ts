@@ -13,16 +13,18 @@ export type DashboardOpportunity = {
   recommendedAction: string;
   offerId: string | null;
   status: string;
+  mission: string | null;
+  scoring: { potential: number; urgency: number; probability: number } | null;
 };
 
 /** Toutes les valeurs proviennent de la base : aucune métrique fictive. */
 export async function getDashboard(db: Db, orgId: string, today: string) {
-  const opps = await db.query<{ id: string; customer_id: string; customer_name: string; type: string; title: string; justification: string; confidence: string; estimated_value_ht: string | null; priority: number; recommended_action: string; offer_id: string | null; status: string }>(
+  const opps = await db.query<{ id: string; customer_id: string; customer_name: string; type: string; title: string; justification: string; confidence: string; estimated_value_ht: string | null; priority: number; recommended_action: string; offer_id: string | null; status: string; mission: string | null; scoring: DashboardOpportunity["scoring"] }>(
     `select o.id, o.customer_id, coalesce(c.trade_name, c.legal_name) as customer_name, o.type, o.title, o.justification, o.confidence,
-            o.estimated_value_ht, o.priority, o.recommended_action, o.offer_id, o.status
+            o.estimated_value_ht, o.priority, o.recommended_action, o.offer_id, o.status, o.details->>'mission' as mission, o.details->'scoring' as scoring
      from opportunities o join customers c on c.id = o.customer_id
      where o.organization_id = $1 and o.status in ('open', 'in_progress')
-     order by (o.status = 'open') desc, o.priority desc, o.estimated_value_ht desc nulls last limit 8`, [orgId]);
+     order by (o.status = 'open') desc, o.priority desc, o.estimated_value_ht desc nulls last limit 10`, [orgId]);
   const stats = (await db.query<{ open_count: number; potential: string | null; reorder_count: number; dormant_count: number }>(
     `select count(*)::int as open_count, sum(estimated_value_ht) filter (where type in ('reorder','unclosed_offer')) as potential,
             count(*) filter (where type = 'reorder')::int as reorder_count, count(*) filter (where type = 'dormant_customer')::int as dormant_count
@@ -71,6 +73,7 @@ export async function getDashboard(db: Db, orgId: string, today: string) {
     opportunities: opps.rows.map<DashboardOpportunity>((o) => ({
       id: o.id, customerId: o.customer_id, customerName: o.customer_name, type: o.type, title: o.title, justification: o.justification,
       confidence: o.confidence, estimatedValueHt: o.estimated_value_ht, priority: o.priority, recommendedAction: o.recommended_action, offerId: o.offer_id, status: o.status,
+      mission: o.mission, scoring: o.scoring,
     })),
     stats: { openOpportunities: stats.open_count, potentialHt: stats.potential, reorderCount: stats.reorder_count, dormantCount: stats.dormant_count },
     approvals: approvals.rows,

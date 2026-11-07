@@ -12,7 +12,7 @@ import { audit } from "@/lib/security/audit";
 import { evaluateDiscount, type CommercialPolicy } from "@/features/offers/policy";
 import { ANALYST_SYSTEM, LEA_SYSTEM } from "./prompts";
 import { emailDraftSchema, objectionReplySchema, replyAnalysisSchema, type ReplyAnalysis } from "./schemas";
-import { mockFollowup, mockObjectionReply, mockOfferEmail, type ContactCtx } from "./mock-brain";
+import { mockFollowup, mockMeetingProposal, mockObjectionReply, mockOfferEmail, MEETING_FORMAT_LABEL, type ContactCtx } from "./mock-brain";
 import { answerFromFacts, detectTopics, type Facts } from "./answers";
 import { buildTemplate } from "@/features/conversations/templates";
 import { toE164, isMobileFr } from "@/lib/phone";
@@ -44,12 +44,12 @@ async function senderInfo(db: Db, orgId: string, userId: string | null) {
   return { senderName: me?.display_name ?? "LÉA — assistante commerciale", companyName: org?.brand?.companyName ?? org?.name ?? "" };
 }
 
-type ContactInfo = { id: string; email: string | null; mobile: string | null; channel: "email" | "whatsapp" | null; ctx: ContactCtx };
+type ContactInfo = { id: string; email: string | null; mobile: string | null; channel: "email" | "whatsapp" | null; phonePreferred: boolean; ctx: ContactCtx };
 
 /** Contact joignable du client et canal à utiliser : email si consentement, sinon WhatsApp (mobile + consentement). */
 async function primaryContact(db: Db, customerId: string): Promise<ContactInfo | null> {
-  const r = await db.query<{ id: string; email: string | null; phone: string | null; consent_email: boolean; consent_whatsapp: boolean; salutation: string | null; first_name: string | null; last_name: string | null }>(
-    `select c.id, c.email, coalesce(c.mobile, c.phone) as phone, c.consent_email, c.consent_whatsapp, c.salutation, c.first_name, c.last_name
+  const r = await db.query<{ id: string; email: string | null; phone: string | null; consent_email: boolean; consent_whatsapp: boolean; preferred_channel: string | null; salutation: string | null; first_name: string | null; last_name: string | null }>(
+    `select c.id, c.email, coalesce(c.mobile, c.phone) as phone, c.consent_email, c.consent_whatsapp, c.preferred_channel, c.salutation, c.first_name, c.last_name
      from customer_contacts cc join contacts c on c.id = cc.contact_id
      where cc.customer_id = $1 and cc.can_receive_offers
      order by ((c.email is not null and c.consent_email) or (c.consent_whatsapp and coalesce(c.mobile, c.phone) is not null)) desc,
@@ -59,8 +59,11 @@ async function primaryContact(db: Db, customerId: string): Promise<ContactInfo |
   const c = r.rows[0];
   if (!c) return null;
   const mobile = toE164(c.phone);
-  const channel = c.email && c.consent_email ? "email" : c.consent_whatsapp && isMobileFr(mobile) ? "whatsapp" : null;
-  return { id: c.id, email: c.email, mobile: isMobileFr(mobile) ? mobile : null, channel, ctx: { salutation: c.salutation, firstName: c.first_name, lastName: c.last_name } };
+  const canEmail = !!c.email && c.consent_email;
+  const canWa = c.consent_whatsapp && isMobileFr(mobile);
+  // Préférence de contact du client respectée en priorité, dans la limite des consentements.
+  const channel = c.preferred_channel === "whatsapp" && canWa ? "whatsapp" : c.preferred_channel === "email" && canEmail ? "email" : canEmail ? "email" : canWa ? "whatsapp" : null;
+  return { id: c.id, email: c.email, mobile: isMobileFr(mobile) ? mobile : null, channel, phonePreferred: c.preferred_channel === "phone", ctx: { salutation: c.salutation, firstName: c.first_name, lastName: c.last_name } };
 }
 
 /** Faits vérifiés pour répondre aux questions (offre en cours, conditions du compte, disponibilités connues). */
@@ -191,6 +194,15 @@ export async function analyzeInbound(db: Db, orgId: string, messageId: string, a
     if (analysis.requestedDiscountPct !== null || analysis.targetPrice || analysis.requestedQuantity)
       await db.query(`insert into agent_memory (organization_id, customer_id, kind, certainty, content, data, source) values ($1,$2,'negotiation','declared',$3,$4,'email entrant')`,
         [orgId, m.customer_id, `Demande client : ${[analysis.requestedDiscountPct !== null && `remise ${analysis.requestedDiscountPct} %`, analysis.requestedQuantity && `quantité ${analysis.requestedQuantity}`, analysis.targetPrice && `prix cible ${analysis.targetPrice}`].filter(Boolean).join(", ")}`, { messageId }]);
+  }
+  // Respect des refus : plus de sollicitation proactive pendant la durée de pause configurée.
+  if (m.customer_id && (analysis.objection === "refusal" || analysis.intent === "unsubscribe")) {
+    await db.query(
+      `update customers cu set solicit_paused_until = greatest(coalesce(cu.solicit_paused_until, current_date), current_date + s.refusal_cooldown_days)
+       from organization_settings s where cu.id = $1 and s.organization_id = cu.organization_id`, [m.customer_id]);
+    await db.query(`insert into agent_memory (organization_id, customer_id, kind, certainty, content, data, source) values ($1,$2,'preference','declared',$3,$4,'message entrant')`,
+      [orgId, m.customer_id, analysis.intent === "unsubscribe" ? "Ne souhaite plus recevoir de messages sur ce canal." : "A décliné la proposition : pause des sollicitations.", { messageId }]);
+    await db.query(`update opportunities set status = 'dismissed' where customer_id = $1 and status = 'open'`, [m.customer_id]);
   }
   if (analysis.intent === "unsubscribe" && m.from_address) {
     const ch = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [m.conversation_id])).rows[0]!.channel;
@@ -401,4 +413,85 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
     [orgId, runId, t.customer_id, automatic ? "auto_followup" : "draft_followup", decision.reason, { messageId: msg.rows[0]!.id }, !automatic]);
   const dispatch = automatic ? await dispatchMessage(db, orgId, msg.rows[0]!.id, { type: "agent" }, { autonomous: true, now: opts.now }) : null;
   return { messageId: msg.rows[0]!.id, decision, dispatch };
+}
+
+/**
+ * Mission 5 — proposition de rendez-vous (visio, téléphone ou showroom) à partir d'une opportunité « appointment ».
+ * Le client reçoit une invitation utile (références habituelles, nouveautés) ; l'argumentaire chiffré (CA, tendance)
+ * est réservé au commercial (tâche). Si le contact préfère le téléphone : tâche d'appel, pas de message écrit.
+ */
+export async function draftMeetingProposal(db: Db, orgId: string, opportunityId: string, opts: { autonomous?: boolean; now?: Date } = {}) {
+  const llm = getLlm();
+  const opp = (await db.query<{ id: string; customer_id: string; product_ids: string[]; details: { format?: "visio" | "showroom"; argument?: string[] }; justification: string; customer_name: string }>(
+    `select o.id, o.customer_id, o.product_ids, o.details, o.justification, coalesce(c.trade_name, c.legal_name) as customer_name
+     from opportunities o join customers c on c.id = o.customer_id where o.id = $1 and o.organization_id = $2 and o.type = 'appointment'`, [opportunityId, orgId])).rows[0];
+  if (!opp) throw new Error("Opportunité de rendez-vous introuvable.");
+  const contact = await primaryContact(db, opp.customer_id);
+  const taskNotes = `Argumentaire : ${(opp.details.argument ?? [opp.justification]).join(" ")}`;
+  if (contact?.phonePreferred || !contact?.channel) {
+    await db.query(
+      `insert into followup_tasks (organization_id, customer_id, kind, title, due_at, assigned_user_id, idempotency_key, notes, created_by_agent)
+       select $1, $2, 'call', $3, now() + interval '1 day', cu.owner_user_id, $4, $5, true from customers cu where cu.id = $2
+       on conflict (organization_id, idempotency_key) do nothing`,
+      [orgId, opp.customer_id, `Appeler pour proposer un rendez-vous — ${opp.customer_name}`, `meeting-call:${opp.id}`, taskNotes]);
+    await db.query(`update opportunities set status = 'in_progress' where id = $1`, [opp.id]);
+    return { channel: "phone" as const, messageId: null, dispatch: null, decision: null };
+  }
+  const channel = contact.channel;
+  const format: "visio" | "showroom" | "phone" = opp.details.format ?? "visio";
+  const newProductNames = (await db.query<{ name: string }>(`select name from products where id = any($1::uuid[]) order by name`, [opp.product_ids])).rows.map((r) => r.name);
+  const permanentsCount = (await db.query<{ n: number }>(
+    `select count(*)::int n from (select l.product_id from invoice_lines l join invoices i on i.id = l.invoice_id where i.customer_id = $1 and i.status = 'issued' and i.doc_type = 'invoice' group by l.product_id having count(distinct i.id) >= 3) x`, [opp.customer_id])).rows[0]!.n;
+  const sender = await senderInfo(db, orgId, null);
+  const context = { contact: contact.ctx, channel, format, newProductNames, permanentsCount, ...sender };
+  const res = await llm.structured({
+    task: "draft_meeting_proposal",
+    system: LEA_SYSTEM,
+    input: `Propose un rendez-vous de 20 minutes ${MEETING_FORMAT_LABEL[format]} au client. Ne mentionne aucune analyse interne (baisse de chiffre d'affaires, retard d'objectif) et ne propose aucun créneau précis.\nDonnées :\n${wrapUntrusted("system_data", JSON.stringify({ format, newProductNames, permanentsCount, contact: contact.ctx }))}`,
+    schema: emailDraftSchema,
+    context,
+  });
+  let draft = res.data;
+  const guardNotes: string[] = [];
+  const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: permanentsCount > 0 });
+  if (!guard.ok || /(baisse|retard|objectif|chiffre d'affaires)/i.test(draft.body)) {
+    guardNotes.push(...(guard.ok ? ["Analyse interne mentionnée au client."] : guard.reasons));
+    draft = mockMeetingProposal(context);
+  }
+  let body = draft.body;
+  let template: ReturnType<typeof buildTemplate>["template"] | null = null;
+  if (channel === "whatsapp") {
+    const name = [contact.ctx?.salutation === "Mme" ? "Madame" : contact.ctx?.salutation === "M." ? "Monsieur" : null, contact.ctx?.lastName ?? contact.ctx?.firstName].filter(Boolean).join(" ") || opp.customer_name;
+    const t = buildTemplate("proposition_rdv", [name, MEETING_FORMAT_LABEL[format], sender.companyName]);
+    body = t.text;
+    template = t.template;
+  }
+  const decision = opts.autonomous
+    ? decideAutonomy(await loadAutonomy(db, orgId), { kind: "meeting_proposal", guardNotes, identityVerified: channel === "email" ? !!contact.email : !!contact.mobile })
+    : null;
+  const automatic = decision?.mode === "auto";
+  const runId = await recordRun(db, orgId, "meeting_proposal", { userId: null }, llm, { opportunityId }, { draft, decision }, res.usage);
+  const conv = (await db.query<{ id: string }>(
+    `insert into conversations (organization_id, customer_id, contact_id, channel, subject, status, last_message_at) values ($1,$2,$3,$4,$5,'open', now()) returning id`,
+    [orgId, opp.customer_id, contact.id, channel, channel === "email" ? draft.subject : null])).rows[0]!;
+  const msg = await db.query<{ id: string }>(
+    `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis)
+     values ($1,$2,'outbound',$3,$4,$5,$6,$7,true,$8) returning id`,
+    [orgId, conv.id, channel, channel === "email" ? contact.email : contact.mobile, channel === "email" ? draft.subject : null, body, automatic ? "approved" : "pending_approval",
+      { kind: "meeting_proposal", format, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision, template }],
+  );
+  if (!automatic)
+    await db.query(`insert into approvals (organization_id, subject_type, subject_id, summary, payload, requested_by_agent) values ($1,'message',$2,$3,$4,true)`,
+      [orgId, msg.rows[0]!.id, `Proposition de rendez-vous — ${opp.customer_name}`, { conversationId: conv.id, reason: decision?.reason ?? null }]);
+  // L'argumentaire contextualisé (chiffres internes) va au commercial, pas au client.
+  await db.query(
+    `insert into followup_tasks (organization_id, customer_id, conversation_id, kind, title, due_at, assigned_user_id, idempotency_key, notes, created_by_agent)
+     select $1, $2, $3, 'meeting', $4, now() + interval '3 days', cu.owner_user_id, $5, $6, true from customers cu where cu.id = $2
+     on conflict (organization_id, idempotency_key) do nothing`,
+    [orgId, opp.customer_id, conv.id, `Préparer le rendez-vous ${MEETING_FORMAT_LABEL[format]} — ${opp.customer_name}`, `meeting-prep:${opp.id}`, taskNotes]);
+  await db.query(`update opportunities set status = 'in_progress' where id = $1`, [opp.id]);
+  await db.query(`insert into agent_decisions (organization_id, run_id, customer_id, decision_type, rationale, payload, requires_approval) values ($1,$2,$3,$4,$5,$6,$7)`,
+    [orgId, runId, opp.customer_id, automatic ? "auto_meeting" : "draft_meeting", `Rendez-vous ${MEETING_FORMAT_LABEL[format]} proposé. ${decision?.reason ?? ""}`.trim(), { messageId: msg.rows[0]!.id, opportunityId }, !automatic]);
+  const dispatch = automatic ? await dispatchMessage(db, orgId, msg.rows[0]!.id, { type: "agent" }, { autonomous: true, now: opts.now }) : null;
+  return { channel, messageId: msg.rows[0]!.id, dispatch, decision };
 }

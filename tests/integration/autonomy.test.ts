@@ -126,9 +126,10 @@ describe("LÉA autonome — journée de travail", () => {
 });
 
 describe("Organisation supervisée (Beta) : les réglages JONAS ne s'appliquent pas", () => {
-  it("le pilote automatique n'envoie rien et les réponses attendent une validation", async () => {
+  it("le pilote automatique prépare mais n'envoie rien : tout attend une validation", async () => {
     const r = await withAgent(I.orgB, (db) => runAutopilot(db, I.orgB, FRIDAY));
-    expect(r.skipped).toMatch(/supervisé/);
+    expect(r.emailsSent).toBe(0);
+    expect(r.offersPendingApproval).toBe(r.offersCreated);
     expect(await withUser(I.chloe, async (db) => (await db.query(`select 1 from messages where sent_autonomously`)).rowCount)).toBe(0);
   });
 });

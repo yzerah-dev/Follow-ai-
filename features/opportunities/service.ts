@@ -2,6 +2,7 @@ import type { Db } from "@/lib/database/client";
 import { coPurchase, type InvoiceLite, type LineLite } from "@/features/invoices/analytics";
 import type { PriceRow } from "@/features/offers/pricing";
 import { detectOpportunities, type EngineProduct, type OpportunityCandidate } from "./engine";
+import { currentPeriods, type TargetInput } from "@/features/customers/targets";
 
 export type ScanResult = { created: number; updated: number; expired: number; candidates: number; runId: string };
 
@@ -12,7 +13,7 @@ async function sequential<T extends readonly unknown[]>(thunks: { [K in keyof T]
   return out as unknown as T;
 }
 
-const RECOMPUTED_TYPES = ["reorder", "dormant_customer", "new_product", "cross_sell", "campaign", "unclosed_offer", "appointment"];
+const RECOMPUTED_TYPES = ["reorder", "dormant_customer", "new_product", "cross_sell", "back_in_stock", "campaign", "unclosed_offer", "appointment", "target_gap"];
 
 /**
  * Recalcule les opportunités d'une organisation.
@@ -28,11 +29,33 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
   const runId = run.rows[0]!.id;
   try {
     const settings = (
-      await db.query<{ dormant_after_days: number; reorder_lookahead_days: number }>(
-        `select dormant_after_days, reorder_lookahead_days from organization_settings where organization_id = $1`,
+      await db.query<{ dormant_after_days: number; reorder_lookahead_days: number; meeting_interval_days: number; target_alert_pct: string }>(
+        `select dormant_after_days, reorder_lookahead_days, meeting_interval_days, target_alert_pct from organization_settings where organization_id = $1`,
         [organizationId],
       )
-    ).rows[0] ?? { dormant_after_days: 120, reorder_lookahead_days: 21 };
+    ).rows[0] ?? { dormant_after_days: 120, reorder_lookahead_days: 21, meeting_interval_days: 180, target_alert_pct: "10" };
+    const periods = currentPeriods(today);
+    // Mission 3 : retours en stock (dernier relevé disponible après un relevé à zéro dans les 45 derniers jours)
+    const restocks = (await db.query<{ product_id: string; restocked_at: string }>(
+      `select s.product_id, to_char(max(s.captured_at) at time zone 'UTC', 'YYYY-MM-DD') as restocked_at
+       from inventory_snapshots s
+       where s.organization_id = $1 and s.captured_at > ($2::date - interval '45 days')
+       group by s.product_id
+       having (array_agg(coalesce(s.qty_available, s.qty_on_hand) order by s.captured_at desc))[1] > 0
+          and bool_or(coalesce(s.qty_available, s.qty_on_hand) <= 0)`, [organizationId, today])).rows.map((r) => ({ productId: r.product_id, restockedAt: r.restocked_at }));
+    // Mission 5 : dernier rendez-vous réalisé par client
+    const meetings = new Map((await db.query<{ customer_id: string; last: string }>(
+      `select customer_id, to_char(max(starts_at) at time zone 'UTC', 'YYYY-MM-DD') as last from appointments where organization_id = $1 and status = 'done' group by customer_id`, [organizationId])).rows.map((r) => [r.customer_id, r.last]));
+    // Mission 6 : objectif de la période en cours (annuel prioritaire, sinon mensuel)
+    const targets = new Map<string, TargetInput>();
+    for (const t of (await db.query<{ customer_id: string; period_type: "year" | "month"; period_start: string; target_ht: string }>(
+      `select customer_id, period_type, period_start, target_ht from customer_targets where organization_id = $1 and ((period_type = 'year' and period_start = $2) or (period_type = 'month' and period_start = $3))
+       order by (period_type = 'year')`, [organizationId, periods.year, periods.month])).rows)
+      targets.set(t.customer_id, { periodType: t.period_type, periodStart: t.period_start, targetHt: t.target_ht });
+    // Refus et préférences : aucune sollicitation proactive
+    const blocked = new Map((await db.query<{ id: string; reason: string }>(
+      `select id, case when do_not_solicit then 'Le client ne souhaite plus être sollicité.' else 'Pause après un refus du client.' end as reason
+       from customers where organization_id = $1 and (do_not_solicit or (solicit_paused_until is not null and solicit_paused_until >= $2::date))`, [organizationId, today])).rows.map((r) => [r.id, r.reason]));
 
     const [customers, invoices, lines, products, prices, campaigns, offers] = await sequential([
       () => db.query<{ id: string; name: string; status: string }>(
@@ -122,6 +145,12 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
           coPurchase: assoc,
           activeCampaigns: campaignList,
           openOffers: offers.rows.filter((o) => o.customer_id === c.id).map((o) => ({ id: o.id, number: o.number, status: o.status, sentAt: o.sent_at, totalHt: o.total_ht })),
+          restocks,
+          lastMeetingAt: meetings.get(c.id) ?? null,
+          meetingIntervalDays: settings.meeting_interval_days,
+          target: targets.get(c.id) ?? null,
+          targetAlertPct: Number(settings.target_alert_pct),
+          blockedReason: blocked.get(c.id) ?? null,
         }),
       );
     }
