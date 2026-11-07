@@ -13,7 +13,7 @@ import { evaluateDiscount, type CommercialPolicy } from "@/features/offers/polic
 import { ANALYST_SYSTEM, LEA_SYSTEM } from "./prompts";
 import { emailDraftSchema, objectionReplySchema, replyAnalysisSchema, type ReplyAnalysis } from "./schemas";
 import { mockFollowup, mockObjectionReply, mockOfferEmail, type ContactCtx } from "./mock-brain";
-import { answerFromFacts, detectTopics, TOPIC_LABEL, type Facts } from "./answers";
+import { answerFromFacts, detectTopics, type Facts } from "./answers";
 import { buildTemplate } from "@/features/conversations/templates";
 import { toE164, isMobileFr } from "@/lib/phone";
 import { formatMoney } from "@/lib/money";
@@ -228,8 +228,7 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
   const turn = history.filter((h) => h.direction === "outbound").length;
   const facts = await loadFacts(db, m.customer_id, m.offer_id);
   const topics = detectTopics(inbound.body);
-  const { answers, unknown } = answerFromFacts(topics, facts, inbound.body);
-  const unknownLabels = unknown.map((t) => TOPIC_LABEL[t]);
+  const { answers, unknown, unknownLabels } = answerFromFacts(topics, facts, inbound.body);
 
   // Décision de remise : 100 % déterministe
   let escalate = false;

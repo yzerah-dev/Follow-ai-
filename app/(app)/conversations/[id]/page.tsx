@@ -113,7 +113,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
                     {mine && m.status === "simulated_sent" ? <Badge tone="warning">Envoi simulé</Badge> : null}
                     {a.template ? <Badge tone="outline">Modèle « {a.template.name} »</Badge> : null}
                     {a.kind === "followup" ? <Badge tone="outline">Relance n° {a.attempt}</Badge> : null}
-                    {a.simulatedAi ? <Badge tone="warning">IA simulée</Badge> : null}
+                    {mine && a.simulatedAi ? <Badge tone="warning">IA simulée</Badge> : null}
                   </div>
                   {m.status === "pending_approval" ? (
                     <div className="space-y-2">

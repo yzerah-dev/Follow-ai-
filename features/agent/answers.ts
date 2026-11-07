@@ -52,9 +52,10 @@ function mentioned(lines: FactLine[], text: string): FactLine[] {
   return lines.filter((l) => t.includes(norm(l.reference)) || norm(l.description).split(/\s+/).some((w) => w.length >= 5 && t.includes(w)));
 }
 
-export function answerFromFacts(topics: Topic[], facts: Facts, text: string): { answers: string[]; unknown: Topic[] } {
+export function answerFromFacts(topics: Topic[], facts: Facts, text: string): { answers: string[]; unknown: Topic[]; unknownLabels: string[] } {
   const answers: string[] = [];
   const unknown: Topic[] = [];
+  const labels = new Map<Topic, string>(); // libellé précis d'un point non connu (ex. « la disponibilité de Couronne Lin »)
   const o = facts.offer;
   const focus = o ? (mentioned(o.lines, text).length ? mentioned(o.lines, text) : o.lines).slice(0, 5) : [];
   for (const topic of topics) {
@@ -76,15 +77,18 @@ export function answerFromFacts(topics: Topic[], facts: Facts, text: string): { 
           unknown.push(topic);
           break;
         }
-        let anyUnknown = false;
+        const unknownNames: string[] = [];
         for (const l of focus) {
-          if (l.availability === "unknown") anyUnknown = true;
+          if (l.availability === "unknown") unknownNames.push(l.description);
           else if (l.availability === "out_of_stock" || l.availability === "on_order")
             answers.push(`${l.description} : en réapprovisionnement${l.availableFrom ? `, disponible à partir du ${date(l.availableFrom)}` : " (date à confirmer)"}.`);
           else if (l.qtyAvailable !== null && dec(l.qtyAvailable).lt(dec(l.quantity))) answers.push(`${l.description} : stock disponible inférieur à la quantité proposée, je fais confirmer le reliquat.`);
           else answers.push(`${l.description} : disponible en stock pour la quantité proposée.`);
         }
-        if (anyUnknown) unknown.push(topic);
+        if (unknownNames.length) {
+          unknown.push(topic);
+          labels.set(topic, `la disponibilité de ${unknownNames.join(", ")}`);
+        }
         break;
       }
       case "franco":
@@ -117,5 +121,5 @@ export function answerFromFacts(topics: Topic[], facts: Facts, text: string): { 
         break;
     }
   }
-  return { answers, unknown };
+  return { answers, unknown, unknownLabels: unknown.map((t) => labels.get(t) ?? TOPIC_LABEL[t]) };
 }

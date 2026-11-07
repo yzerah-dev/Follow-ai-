@@ -98,6 +98,7 @@ describe("Réponses factuelles", () => {
     const r = answerFromFacts(["availability"], facts, "c'est en stock ?");
     expect(r.answers).toEqual(["Bougie parfumée : disponible en stock pour la quantité proposée."]);
     expect(r.unknown).toEqual(["availability"]);
+    expect(r.unknownLabels).toEqual(["la disponibilité de Couronne Lin"]);
   });
 });
 
