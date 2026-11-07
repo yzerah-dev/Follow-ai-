@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const KINDS = [
   { key: "offer_pdf", label: "Offre PDF", icon: FileText },
   { key: "offer_excel", label: "Offre Excel illustrée", icon: Sheet },
+  { key: "coverage_excel", label: "Analyse de couverture", icon: Sheet },
   { key: "product_sheet", label: "Fiches produits", icon: LayoutTemplate },
   { key: "catalog", label: "Catalogue", icon: BookOpen },
   { key: "poster", label: "Affiche", icon: ImageIcon },

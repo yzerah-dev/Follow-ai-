@@ -60,3 +60,27 @@ Facture ≠ commande (`order_requests`) ≠ encaissement (`payment_status`). Avo
 Par mission, sur 90 jours : opportunités détectées / traitées, offres envoyées, gagnées, taux de conversion,
 **commandes HT** (demandes de commande issues des offres), **CA facturé attribuable** = lignes de factures du client sur les produits de
 l'offre émises dans les 45 jours suivant l'envoi, avoirs déduits, plafonné au montant de l'offre.
+
+## Playbook des objections — persuasion par la donnée (`features/agent/playbook.ts`, `negotiation.ts`)
+Une objection n'est pas un refus. Pour « trop cher », « pas de budget », « trop de stock », « pas besoin », « ça ne se vend pas » :
+1. **Analyse de couverture** (`features/analytics/coverage.ts`) de chaque référence de l'offre :
+   - ventes/jour : sorties caisse déclarées, sinon **estimation** = achats entre la 1re et la dernière commande / jours (H1) ;
+   - stock : déclaré par le client (≤ 30 jours), sinon **estimation** = dernière commande − ventes estimées depuis (H2) ;
+   - couverture = stock / ventes par jour ; risque : ≤ 7 j « rupture imminente », ≤ 21 j « à surveiller » ;
+   - quantité recommandée = ventes par jour × cycle habituel − stock, arrondie au colisage ;
+   - rotation lente : plus de 2 cycles sans achat, ou couverture > 2 cycles ;
+   - confiance : vérifié (sorties caisse + stock déclaré) · déclaré · estimation fiable (≥ 4 commandes régulières) · moyenne · fragile.
+   Inconnu ≠ 0 : une valeur absente reste `null` et s'affiche « Inconnu ».
+2. **Stratégie** :
+   - trop cher / budget : on garde les références à fort potentiel, on retire les rotations lentes, quantités ramenées au besoin ;
+     un budget chiffré annoncé est respecté (références en rupture d'abord) ; **jamais plus cher** que l'offre initiale ;
+   - trop de stock : le stock déclaré est enregistré (`customer_stock_reports`, source « customer_message ») ; seules les références
+     à couvrir restent ; sinon reprise de contact datée (couverture − 7 jours, 45 jours au plus) sans nouvelle offre ;
+     stock déclaré sans référence identifiable → LÉA demande laquelle avant de recalculer ;
+   - pas besoin : seule la rupture imminente est proposée ; sinon la décision est respectée ;
+   - ça ne se vend pas : la référence lente est retirée et remplacée par des compléments / nouveautés (quantité de découverte).
+3. **Offre révisée** : nouvelle offre (source « lea »), l'ancienne passe « remplacée » (`supersedes_offer_id`) ; supports régénérés :
+   PDF, Excel illustré, **analyse de couverture** (Excel, photos, hypothèses, niveau de confiance), catalogue si nouveautés.
+   La révision remplace la remise (pas de double concession). En mode supervisé, l'offre et la réponse attendent une validation.
+4. **Limites** : 2 révisions au plus par offre, puis le commercial reprend ; un refus explicite est définitif ;
+   aucune fausse urgence, aucune estimation présentée comme un stock vérifié, aucune rentabilité promise, aucun autre client cité.

@@ -386,3 +386,98 @@ export function validateBrandConsistency(brand: Brand, template: { primaryColor:
   ];
   return { ok: checks.every((c) => c.ok), checks };
 }
+
+// ------------------------------------------------------------------ Analyse de couverture (Excel illustré)
+
+export type CoverageDocRow = {
+  reference: string;
+  name: string;
+  image: DocImage;
+  lastPurchase: string | null;
+  historicalQty: string;
+  dailyRate: string | null;
+  rateSource: "sell_out" | "estimated" | null;
+  stockOnHand: string | null;
+  stockSource: "declared" | "estimated" | null;
+  coverageDays: number | null;
+  confidenceLabel: string;
+  recommendedQty: string | null;
+  priceHt: string | null;
+  reason: string;
+};
+
+export type CoverageDocData = {
+  customerName: string;
+  date: string;
+  offerNumber: string | null;
+  rows: CoverageDocRow[];
+  complementary: string[];
+  news: string[];
+  hypotheses: string[];
+};
+
+const UNKNOWN = "Inconnu";
+
+/** Excel « analyse de couverture » : une valeur inconnue est écrite « Inconnu », jamais 0 ; une estimation est toujours étiquetée. */
+export async function generateCoverageExcel(data: CoverageDocData, brand: Brand): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Follow.AI — LÉA";
+  wb.created = new Date();
+  const ws = wb.addWorksheet("Analyse", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 }, views: [{ state: "frozen", ySplit: 5 }] });
+  const argb = `FF${brand.primaryColor.replace("#", "").toUpperCase()}`;
+  ws.columns = [
+    { key: "client", width: 22 }, { key: "ref", width: 14 }, { key: "name", width: 34 }, { key: "img", width: 13 }, { key: "last", width: 13 },
+    { key: "hist", width: 12 }, { key: "rate", width: 18 }, { key: "stock", width: 20 }, { key: "cov", width: 12 }, { key: "conf", width: 24 },
+    { key: "reco", width: 13 }, { key: "price", width: 11 }, { key: "reason", width: 52 }, { key: "news", width: 34 },
+  ];
+  ws.mergeCells("A1:N1");
+  ws.getCell("A1").value = `${brand.companyName} — Analyse de couverture · ${data.customerName}${data.offerNumber ? ` · proposition ${data.offerNumber}` : ""}${brand.isDemo ? " (DÉMONSTRATION)" : ""}`;
+  ws.getCell("A1").font = { bold: true, size: 15, color: { argb: "FFFFFFFF" } };
+  ws.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
+  ws.getRow(1).height = 28;
+  ws.mergeCells("A2:N2");
+  ws.getCell("A2").value = `Établie le ${formatDate(data.date)}. Les ventes et stocks marqués « estimé » sont calculés à partir de vos achats (factures) : voir l'onglet Méthode. « Inconnu » = donnée non disponible (différent de 0).`;
+  ws.getCell("A2").font = { italic: true, size: 10 };
+  const head = ws.getRow(4);
+  head.values = ["Client", "Référence", "Désignation", "Photo", "Dernier achat", "Quantité historique (12 mois)", "Ventes/jour", "Stock restant connu", "Jours de couverture", "Niveau de confiance", "Quantité recommandée", "Prix HT (€)", "Motif de recommandation", "Nouveautés complémentaires"];
+  head.height = 32;
+  head.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${brand.secondaryColor.replace("#", "").toUpperCase()}` } };
+    cell.alignment = { vertical: "middle", wrapText: true };
+  });
+  const extras = [...data.news.map((n) => `Nouveauté : ${n}`), ...data.complementary.map((n) => `Complément : ${n}`)];
+  let r = 5;
+  for (const [k, x] of data.rows.entries()) {
+    const row = ws.getRow(r);
+    const rate = x.dailyRate === null ? UNKNOWN : `${Number(x.dailyRate)} (${x.rateSource === "sell_out" ? "sorties caisse" : "estimé"})`;
+    const stock = x.stockSource === "declared" ? Number(x.stockOnHand) : x.stockOnHand !== null ? `${UNKNOWN} (estimé ~${x.stockOnHand})` : UNKNOWN;
+    row.values = [
+      data.customerName, x.reference, x.name, "", x.lastPurchase ? formatDate(x.lastPurchase) : UNKNOWN, Number(x.historicalQty), rate, stock,
+      x.coverageDays === null ? UNKNOWN : x.coverageDays, x.confidenceLabel, x.recommendedQty === null ? UNKNOWN : Number(x.recommendedQty),
+      x.priceHt === null ? UNKNOWN : Number(dec(x.priceHt).toFixed(2)), x.reason, k === 0 ? extras.join("\n") : "",
+    ];
+    row.getCell(12).numFmt = "#,##0.00";
+    row.alignment = { vertical: "middle", wrapText: true };
+    row.height = 60;
+    if (x.image) {
+      const id = wb.addImage({ base64: `data:${x.image.mime};base64,${x.image.data.toString("base64")}`, extension: x.image.mime === "image/jpeg" ? "jpeg" : "png" });
+      ws.addImage(id, { tl: { col: 3.1, row: r - 1 + 0.1 }, ext: { width: 70, height: 70 } });
+    } else row.getCell(4).value = "Photo non disponible";
+    r++;
+  }
+  const m = wb.addWorksheet("Méthode");
+  m.columns = [{ width: 120 }];
+  const lines = [
+    "Méthode de calcul",
+    "",
+    ...(data.hypotheses.length ? data.hypotheses : ["Aucune estimation : toutes les valeurs proviennent de données déclarées ou vérifiées."]),
+    "Couverture = stock restant / ventes par jour. Quantité recommandée = ventes par jour × cycle de réassort habituel − stock restant, arrondie au colisage.",
+    "Rupture imminente : ≤ 7 jours de couverture · À surveiller : ≤ 21 jours.",
+    "Niveaux de confiance : Vérifié (sorties caisse et stock déclarés) · Déclaré par le client · Estimation fiable (≥ 4 commandes régulières) · moyenne (3 commandes) · fragile (moins).",
+    "Les factures mesurent vos achats auprès de nous, pas vos ventes en magasin : transmettez vos sorties caisse ou votre stock pour une analyse vérifiée.",
+  ];
+  lines.forEach((t, i) => { m.getCell(`A${i + 1}`).value = t; if (i === 0) m.getCell("A1").font = { bold: true, size: 14 }; });
+  const buf = await wb.xlsx.writeBuffer();
+  return Buffer.from(buf as ArrayBuffer);
+}

@@ -1,6 +1,18 @@
 # Avancement — Follow.AI
 
-_Mise à jour : 2026-11-08 — voix de LÉA et plan de contact._
+_Mise à jour : 2026-11-08 — formation commerciale V2 : persuasion par la donnée._
+
+## Formation commerciale V2 (2026-11-08)
+- Moteur de couverture de stock (`features/analytics/coverage.ts`) : ventes/jour, stock, couverture, risque de rupture, quantité
+  recommandée, rotations lentes, compléments et nouveautés ; estimations étiquetées avec hypothèses et niveau de confiance.
+- Playbook des objections (`features/agent/playbook.ts`) et négociation (`negotiation.ts`) : trop cher, pas de budget, trop de stock,
+  pas besoin, ça ne se vend pas (nouvelle objection) → contre-arguments chiffrés, offre révisée, documents, question de décision.
+- Stock déclaré par le client enregistré (`customer_stock_reports`, RLS testée) ; offres « remplacées » (`supersedes_offer_id`).
+- Excel « analyse de couverture » illustré (colonnes demandées, Inconnu ≠ 0, onglet Méthode) joint aux offres révisées
+  et téléchargeable depuis la fiche client (section « Couverture de stock »).
+- Prompts système : personnalité (déterminée, persuasive, préparée, respectueuse) et méthode en 6 étapes ; interdits explicites.
+- Détails des règles : `docs/COMMERCIAL_RULES.md` (section Playbook).
+
 
 ## Voix de LÉA (2026-11-08)
 - Paramètres → **Voix de LÉA** : ton (chaleureux, dynamique, professionnel, expert), longueur, présentation transparente

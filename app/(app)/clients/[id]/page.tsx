@@ -16,6 +16,8 @@ import { ActionButton } from "@/components/app/action-button";
 import { AVAILABILITY, CUSTOMER_STATUS, OFFER_STATUS, OPPORTUNITY_LABEL, PAYMENT_STATUS } from "@/components/app/labels";
 import { createOfferForCustomerAction, createOfferFromOpportunityAction } from "@/app/actions/commercial";
 import { GrowthSection } from "./growth-section";
+import { CoverageSection } from "./coverage-section";
+import { loadCustomerCoverage } from "@/features/analytics/coverage-repo";
 
 const CERTAINTY: Record<string, { label: string; tone: "success" | "info" | "warning" }> = {
   verified_fact: { label: "Fait vérifié", tone: "success" },
@@ -26,7 +28,10 @@ const CERTAINTY: Record<string, { label: string; tone: "success" | "info" | "war
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const { data, ctx } = await db(async (d, ctx) => ({ data: await getCustomer(d, ctx.org.organizationId, id, toIsoDate(new Date())), ctx }));
+  const { data, ctx, coverage } = await db(async (d, ctx) => {
+    const data = await getCustomer(d, ctx.org.organizationId, id, toIsoDate(new Date()));
+    return { data, ctx, coverage: data ? (await loadCustomerCoverage(d, ctx.org.organizationId, id, toIsoDate(new Date()))).rows : [] };
+  });
   if (!data) notFound();
   const { customer: c, summary: s } = data;
   const writable = canWrite(ctx.org.role);
@@ -83,6 +88,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <Stat label="Panier moyen HT" value={s.avgBasket ? formatMoney(s.avgBasket, "EUR", { compact: true }) : "—"} hint={s.trendPct !== null ? `Tendance 90 j : ${s.trendPct > 0 ? "+" : ""}${s.trendPct.toLocaleString("fr-FR")} %` : undefined} />
       </div>
 
+      <div className="mb-5"><CoverageSection customerId={c.id} rows={coverage} /></div>
       <GrowthSection customerId={c.id} growth={data.growth} writable={writable} revenue12m={s.revenue12m} doNotSolicit={c.do_not_solicit} pausedUntil={c.solicit_paused_until} />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">

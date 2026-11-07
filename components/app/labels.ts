@@ -21,6 +21,7 @@ export const OFFER_STATUS: Record<string, { label: string; tone: BadgeTone }> = 
   accepted: { label: "Acceptée", tone: "success" },
   rejected: { label: "Refusée", tone: "danger" },
   expired: { label: "Expirée", tone: "neutral" },
+  superseded: { label: "Remplacée", tone: "neutral" },
 };
 
 export const CUSTOMER_STATUS: Record<string, { label: string; tone: BadgeTone }> = {

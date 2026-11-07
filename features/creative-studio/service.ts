@@ -5,16 +5,20 @@ import { audit } from "@/lib/security/audit";
 import type { Brand } from "@/lib/documents/pdf";
 import { getImageAdapter, type ImageJobKind } from "@/lib/ai/images";
 import { parseTemplate, type TemplateKind } from "./templates";
+import { loadCustomerCoverage } from "@/features/analytics/coverage-repo";
+import { CONFIDENCE_LABEL } from "@/features/analytics/coverage";
+import { toIsoDate } from "@/lib/utils";
 import {
-  generateCatalog, generateOfferExcel, generateOfferPdf, generateProductSheet, generateRetailPoster,
+  generateCatalog, generateCoverageExcel, generateOfferExcel, generateOfferPdf, generateProductSheet, generateRetailPoster,
   validateBrandConsistency, validateOfferDocument, type DocImage, type OfferDocData, type ProductDocData, type ValidationReport,
 } from "./generators";
 
-export const ASSET_KINDS = ["offer_pdf", "offer_excel", "product_sheet", "catalog", "poster", "lifestyle_shooting"] as const;
+export const ASSET_KINDS = ["offer_pdf", "offer_excel", "coverage_excel", "product_sheet", "catalog", "poster", "lifestyle_shooting"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 export const ASSET_LABEL: Record<AssetKind, string> = {
   offer_pdf: "Offre PDF",
   offer_excel: "Offre Excel illustrée",
+  coverage_excel: "Analyse de couverture (Excel)",
   product_sheet: "Fiches produits",
   catalog: "Catalogue",
   poster: "Affiche",
@@ -133,6 +137,26 @@ export async function generateOfferAssets(db: Db, orgId: string, userId: string 
       const b = await loadBrand(db, orgId, "offer_excel");
       const v = validateOfferDocument(doc, { totals: doc.totals, lines: sourceLines }, master);
       await store(kind, `Offre-${safeNo}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", await generateOfferExcel(doc, b.brand, { showImages: b.template.showProductImages }), v, b.templateVersion);
+    } else if (kind === "coverage_excel") {
+      const b = await loadBrand(db, orgId, "offer_excel");
+      const o = (await db.query<{ customer_id: string }>(`select customer_id from offers where id = $1`, [offerId])).rows[0]!;
+      const today = toIsoDate(new Date());
+      const cov = await loadCustomerCoverage(db, orgId, o.customer_id, today, { productIds });
+      const offerQty = new Map(doc.lines.map((l, k) => [productIds[k]!, { qty: l.quantity, price: l.unitPriceHt }]));
+      const rows = [];
+      for (const r of cov.rows) {
+        const inOffer = offerQty.get(r.productId);
+        rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: await productImage(db, r.productId),
+          recommendedQty: inOffer ? inOffer.qty : r.recommendedQty, priceHt: inOffer ? inOffer.price : r.priceHt });
+      }
+      const hypotheses = [...new Set(cov.rows.flatMap((r) => r.hypotheses))];
+      const v: ValidationReport = { ok: true, checks: [
+        { name: "Quantités identiques à l'offre", ok: rows.every((r) => !offerQty.has(r.productId) || r.recommendedQty === offerQty.get(r.productId)!.qty) },
+        { name: "Estimations étiquetées (hypothèses fournies)", ok: rows.every((r) => r.stockSource !== "estimated" && r.rateSource !== "estimated") || hypotheses.length > 0 },
+      ] };
+      v.ok = v.checks.every((c) => c.ok);
+      await store(kind, `Analyse-${safeNo}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        await generateCoverageExcel({ customerName: cov.customerName, date: today, offerNumber: doc.number, rows, complementary: cov.complementary, news: cov.news, hypotheses }, b.brand), v, b.templateVersion);
     } else if (kind === "product_sheet") {
       const b = await loadBrand(db, orgId, "product_sheet");
       for (const p of await loadProductDocs(db, productIds)) {
@@ -176,4 +200,14 @@ export async function autoApproveAssets(db: Db, orgId: string, offerId: string) 
      returning id`, [orgId, offerId]);
   for (const a of r.rows) await audit(db, orgId, { type: "agent" }, "creative.asset_auto_approved", { type: "generated_asset", id: a.id });
   return r.rowCount ?? 0;
+}
+
+/** Analyse de couverture d'un client (toutes références achetées sur 12 mois), générée à la demande. */
+export async function buildCustomerCoverageExcel(db: Db, orgId: string, customerId: string, today: string) {
+  const b = await loadBrand(db, orgId, "offer_excel");
+  const cov = await loadCustomerCoverage(db, orgId, customerId, today);
+  const rows = [];
+  for (const r of cov.rows.slice(0, 60)) rows.push({ ...r, confidenceLabel: CONFIDENCE_LABEL[r.confidence], image: await productImage(db, r.productId) });
+  const data = await generateCoverageExcel({ customerName: cov.customerName, date: today, offerNumber: null, rows, complementary: cov.complementary, news: cov.news, hypotheses: [...new Set(cov.rows.flatMap((r) => r.hypotheses))] }, b.brand);
+  return { filename: `Analyse-couverture-${cov.customerName.replace(/[^A-Za-z0-9-]+/g, "-").slice(0, 40)}-${today}.xlsx`, data };
 }

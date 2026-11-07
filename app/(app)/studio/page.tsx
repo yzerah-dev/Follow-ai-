@@ -10,6 +10,7 @@ export const metadata = { title: "Studio créatif" };
 const KIND = {
   offer_pdf: { label: "Offre PDF", icon: FileText },
   offer_excel: { label: "Offre Excel illustrée", icon: Sheet },
+  coverage_excel: { label: "Analyse de couverture", icon: Sheet },
   product_sheet: { label: "Fiche produit", icon: LayoutTemplate },
   catalog: { label: "Catalogue", icon: BookOpen },
   poster: { label: "Affiche", icon: ImageIcon },

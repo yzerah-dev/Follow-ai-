@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const OBJECTIONS = ["too_expensive", "no_need", "stock_available", "competition", "budget", "delivery", "lead_time", "no_time", "refusal", "no_response"] as const;
+export const OBJECTIONS = ["too_expensive", "no_need", "stock_available", "competition", "budget", "delivery", "lead_time", "no_time", "refusal", "no_response", "not_selling"] as const;
 export type Objection = (typeof OBJECTIONS)[number];
 
 export const OBJECTION_LABEL: Record<Objection, string> = {
@@ -14,6 +14,7 @@ export const OBJECTION_LABEL: Record<Objection, string> = {
   no_time: "Manque de temps",
   refusal: "Refus",
   no_response: "Non-réponse",
+  not_selling: "Ne se vend pas",
 };
 
 export const INTENTS = ["accept", "objection", "question", "meeting_request", "unsubscribe", "out_of_office", "other"] as const;

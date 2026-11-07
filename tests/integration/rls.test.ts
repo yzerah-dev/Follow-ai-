@@ -13,6 +13,7 @@ const TENANT_TABLES = [
   "invoice_lines", "campaigns", "campaign_products", "opportunities", "offers", "offer_lines", "conversations", "messages",
   "communication_connections", "agent_memory", "agent_runs", "agent_decisions", "creative_templates", "organization_settings",
   "organization_members", "approvals", "followup_tasks", "generated_assets", "imports", "suppression_entries", "customer_targets",
+  "customer_stock_reports",
 ];
 
 beforeAll(async () => {
@@ -23,6 +24,21 @@ beforeAll(async () => {
 const expectDenied = async (p: Promise<unknown>, pattern = /row-level security|violates|permission denied|not allowed/i) => {
   await expect(p).rejects.toThrow(pattern);
 };
+
+describe("Stock déclaré par les clients (customer_stock_reports)", () => {
+  it("écriture limitée à sa propre organisation, invisible des autres", async () => {
+    const [cidA, cidB] = await privileged(async (c) => [
+      (await c.query<{ id: string }>(`select id from customers where organization_id = $1 limit 1`, [I.orgA])).rows[0]!.id,
+      (await c.query<{ id: string }>(`select id from customers where organization_id = $1 limit 1`, [I.orgB])).rows[0]!.id,
+    ]);
+    await expectDenied(withUser(I.bruno, (db) => db.query(`insert into customer_stock_reports (organization_id, customer_id, qty_on_hand, source) values ($1,$2,10,'sales_rep')`, [I.orgB, cidB])));
+    await expectDenied(withUser(I.diane, (db) => db.query(`insert into customer_stock_reports (organization_id, customer_id, qty_on_hand, source) values ($1,$2,10,'sales_rep')`, [I.orgA, cidA])));
+    await withAgent(I.orgA, (db) => db.query(`insert into customer_stock_reports (organization_id, customer_id, qty_on_hand, source) values ($1,$2,10,'customer_message')`, [I.orgA, cidA]));
+    expect(await withUser(I.chloe, async (db) => (await db.query(`select 1 from customer_stock_reports where organization_id = $1`, [I.orgA])).rowCount)).toBe(0);
+    expect(await withUser(I.bruno, async (db) => (await db.query(`select 1 from customer_stock_reports`)).rowCount)).toBe(1);
+    await privileged((c) => c.query(`delete from customer_stock_reports`));
+  });
+});
 
 describe("Isolation entre organisations", () => {
   it("chaque table métier est visible uniquement par son organisation", async () => {

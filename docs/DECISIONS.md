@@ -28,3 +28,6 @@
 | D24 | Arguments commerciaux seulement s'ils sont vérifiés par les données, agrégés (≥ 5 acheteurs), sans « % » | Pas d'allégation trompeuse ; aucun autre client identifiable ; le « % » reste réservé aux remises contrôlées par les garde-fous |
 | D25 | Pas d'argument « marge » tant qu'aucun prix de vente conseillé n'est importé | Une marge client ne peut pas être affirmée sans PVC ; prix d'achat et marges internes jamais communiqués |
 | D26 | Consentement des clients existants déclaré par l'entreprise, audité | L'entreprise porte la responsabilité de la déclaration ; STOP / opposition prioritaires ; modèles Meta obligatoires hors 24 h |
+| D27 | Couverture de stock estimée à partir des achats (sell-in), hypothèses H1/H2 affichées | Les factures ne mesurent pas les ventes consommateur ; une estimation est toujours étiquetée et remplacée par la donnée déclarée quand elle existe |
+| D28 | Offre révisée = nouvelle offre, l'ancienne « remplacée » | Traçabilité des versions et de l'attribution ; la conversation suit la dernière version ; une acceptation porte sur l'offre révisée |
+| D29 | Révision jamais plus chère sur objection prix, 2 révisions maximum | Ne pas mettre le client en difficulté ni le harceler ; au-delà, le commercial reprend |

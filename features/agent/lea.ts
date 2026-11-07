@@ -13,6 +13,7 @@ import { evaluateDiscount, type CommercialPolicy } from "@/features/offers/polic
 import { ANALYST_SYSTEM, leaSystem } from "./prompts";
 import { parseVoice } from "./voice";
 import { offerSalesFacts } from "./arguments";
+import { negotiate } from "./negotiation";
 import { emailDraftSchema, objectionReplySchema, replyAnalysisSchema, type ReplyAnalysis } from "./schemas";
 import { mockFollowup, mockMeetingProposal, mockObjectionReply, mockOfferEmail, MEETING_FORMAT_LABEL, type ContactCtx } from "./mock-brain";
 import { answerFromFacts, detectTopics, type Facts } from "./answers";
@@ -250,7 +251,8 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
     `select direction, body from messages where conversation_id = $1 and id <> $2 and status not in ('draft','pending_approval') order by created_at desc limit 12`, [m.conversation_id, inboundId])).rows.reverse();
   const turn = history.filter((h) => h.direction === "outbound").length;
   const facts = await loadFacts(db, m.customer_id, m.offer_id);
-  const topics = detectTopics(inbound.body);
+  // « Il me reste du stock » parle du stock du CLIENT, pas d'une question sur notre disponibilité.
+  const topics = detectTopics(inbound.body).filter((t) => !(analysis.objection === "stock_available" && t === "availability"));
   const { answers, unknown, unknownLabels } = answerFromFacts(topics, facts, inbound.body);
 
   // Décision de remise : 100 % déterministe
@@ -267,13 +269,36 @@ export async function draftReply(db: Db, orgId: string, inboundId: string, analy
     decisionText = escalate ? "Concurrence évoquée : transfert au commercial avec les éléments collectés." : decisionText;
   }
 
-  const salesFacts = m.offer_id && ["too_expensive", "budget", "competition"].includes(analysis.objection ?? "") ? await offerSalesFacts(db, orgId, m.offer_id, toIsoDate(opts.now ?? new Date())) : [];
+  const today = toIsoDate(opts.now ?? new Date());
+  // Playbook : une objection n'est pas un refus. Analyse de couverture, contre-arguments chiffrés, offre révisée si justifiée.
+  const cfg = await loadAutonomy(db, orgId);
+  // Remise demandée ET autorisée par la politique : on l'accorde (conclusion la plus simple) ; sinon, playbook.
+  const negotiation = m.offer_id && m.customer_id && analysis.intent === "objection" && !opts.injectionSuspected && !(allowed && allowed > 0)
+    ? await negotiate(db, orgId, {
+        offerId: m.offer_id, customerId: m.customer_id, conversationId: m.conversation_id, inboundId, inboundBody: inbound.body, analysis, today, now: opts.now ?? new Date(),
+        autoApprove: cfg.level !== "supervised" && !cfg.paused ? { reason: "Offre révisée par LÉA après objection, conforme à la politique.", maxTotalHt: cfg.maxOfferHt } : null,
+      })
+    : null;
+  if (negotiation?.result.strategy === "respect" && negotiation.result.rationale.startsWith("Déjà")) escalate = true; // LÉA n'insiste pas : le commercial reprend
+  let currentOffer = offer;
+  if (negotiation?.revised) {
+    const o = (await db.query<{ number: string; total_ht: string; valid_until: string | null }>(`select number, total_ht, valid_until from offers where id = $1`, [negotiation.revised.offerId])).rows[0]!;
+    currentOffer = { number: o.number, total_ht: o.total_ht, valid_until: o.valid_until };
+    allowed = null; // la révision remplace la remise : pas de double concession
+  }
+  const playbook = negotiation
+    ? { strategy: negotiation.result.strategy, counterArguments: negotiation.result.counterArguments, removed: negotiation.result.removed, question: negotiation.result.question,
+        followUpDate: negotiation.result.followUpDate, declaredStock: negotiation.declaredStock,
+        revised: negotiation.revised ? { number: negotiation.revised.number, totalHt: negotiation.revised.totalHt, originalTotalHt: offer?.total_ht ?? negotiation.result.originalTotalHt, documents: negotiation.revised.documents } : null }
+    : null;
+  const salesFacts = m.offer_id && !negotiation?.revised && ["too_expensive", "budget", "competition"].includes(analysis.objection ?? "") ? await offerSalesFacts(db, orgId, m.offer_id, today) : [];
   const context = {
+    playbook,
     salesFacts,
     analysis,
     customerName: m.customer_name ?? "",
     contact: contact?.ctx ?? null,
-    offer: offer ? { number: offer.number, totalHt: offer.total_ht, validUntil: offer.valid_until } : null,
+    offer: currentOffer ? { number: currentOffer.number, totalHt: currentOffer.total_ht, validUntil: currentOffer.valid_until } : null,
     allowedDiscountPct: allowed,
     escalate,
     ...sender,
@@ -287,6 +312,7 @@ Remise maximale utilisable dans ce message : ${allowed ?? 0} %. ${escalate ? "Le
 Canal : ${channel === "whatsapp" ? "WhatsApp — messages courts, ton de messagerie, pas d'objet" : "email"}.
 Réponses factuelles autorisées (n'en invente aucune autre) : ${answers.length ? answers.join(" | ") : "aucune"}.
 Arguments de valeur vérifiés (objection prix) : ${salesFacts.length ? salesFacts.join(" | ") : "aucun"}.
+${playbook ? `PLAYBOOK (décision du système, à suivre) : stratégie « ${playbook.strategy} ». Contre-arguments chiffrés à utiliser tels quels : ${playbook.counterArguments.join(" | ") || "aucun"}. Références retirées : ${playbook.removed.map((r) => `${r.name} (${r.reason})`).join(" | ") || "aucune"}. ${playbook.revised ? `Offre révisée ${playbook.revised.number} : ${playbook.revised.totalHt} € HT au lieu de ${playbook.revised.originalTotalHt} € HT, documents joints : ${playbook.revised.documents.join(", ")}.` : ""} ${playbook.followUpDate ? `Reprise de contact proposée le ${playbook.followUpDate}.` : ""} Question de clôture : ${playbook.question || "aucune"}. Les estimations doivent être présentées comme des estimations.` : ""}
 ${unknownLabels.length ? `Sujets SANS donnée fiable (annonce que le commercial confirme, ne réponds pas toi-même) : ${unknownLabels.join(", ")}.` : ""}
 Données du système :
 ${wrapUntrusted("system_data", JSON.stringify({ customerName: context.customerName, contact: context.contact, offer: context.offer, analysis }, null, 2))}
@@ -300,8 +326,9 @@ ${wrapUntrusted("conversation_history", history.map((h) => `${h.direction === "i
     guardNotes.push(...(guard.ok ? ["Remise proposée par l'IA supérieure à la décision du système."] : guard.reasons));
     reply = mockObjectionReply(context);
   }
-  const runId = await recordRun(db, orgId, "message_draft", actor, llm, { inboundId, task: "draft_objection_reply" }, { reply, decisionText, guardNotes }, res.usage);
-  const decision = decideAutonomy(await loadAutonomy(db, orgId), {
+  if (negotiation?.revised && !negotiation.revised.approved) guardNotes.push(`Offre révisée ${negotiation.revised.number} en attente de validation.`);
+  const runId = await recordRun(db, orgId, "message_draft", actor, llm, { inboundId, task: "draft_objection_reply" }, { reply, decisionText, guardNotes, playbook: negotiation?.result.rationale ?? null }, res.usage);
+  const decision = decideAutonomy(cfg, {
     kind: "reply",
     intent: analysis.intent,
     objection: analysis.objection,
@@ -317,7 +344,7 @@ ${wrapUntrusted("conversation_history", history.map((h) => `${h.direction === "i
   const msg = await db.query<{ id: string }>(
     `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis, reply_to_message_id, created_by)
      values ($1,$2,'outbound',$10,$3,$4,$5,$9,true,$6,$7,$8) returning id`,
-    [orgId, m.conversation_id, m.from_address, channel === "whatsapp" ? null : reply.subject, reply.body, { rationale: reply.rationale, discountPct: reply.proposedDiscountPct, decisionText, escalate, guardNotes, simulatedAi: res.simulated, runId, autonomy: decision, answers, unknown: unknownLabels }, inboundId, actor.userId, automatic ? "approved" : "pending_approval", channel],
+    [orgId, m.conversation_id, m.from_address, channel === "whatsapp" ? null : reply.subject, reply.body, { rationale: reply.rationale, discountPct: reply.proposedDiscountPct, decisionText, escalate, guardNotes, simulatedAi: res.simulated, runId, autonomy: decision, answers, unknown: unknownLabels, playbook: negotiation ? { strategy: negotiation.result.strategy, rationale: negotiation.result.rationale, revisedOfferId: negotiation.revised?.offerId ?? null } : null, attachOffer: !!negotiation?.revised }, inboundId, actor.userId, automatic ? "approved" : "pending_approval", channel],
   );
   if (!automatic)
     await db.query(

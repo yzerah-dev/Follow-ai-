@@ -39,6 +39,18 @@ export type ObjectionCtx = {
   turn: number; // nombre de réponses déjà envoyées dans la conversation
   voice?: Voice;
   salesFacts?: string[];
+  playbook?: PlaybookCtx | null;
+};
+
+/** Résultat du playbook transmis à la rédaction (aucun chiffre n'est produit par la rédaction elle-même). */
+export type PlaybookCtx = {
+  strategy: "revise" | "hold" | "respect";
+  counterArguments: string[];
+  removed: { name: string; reason: string }[];
+  question: string;
+  followUpDate: string | null;
+  declaredStock: { qty: string; productName: string | null } | null;
+  revised: { number: string; totalHt: string; originalTotalHt: string; documents: string[] } | null;
 };
 
 export function greeting(contact: ContactCtx): string {
@@ -111,7 +123,8 @@ const RULES: { objection: Objection; patterns: RegExp[] }[] = [
   { objection: "competition", patterns: [/concurren/i, /autre fournisseur/i, /ailleurs/i, /moins cher chez/i] },
   { objection: "delivery", patterns: [/frais de (port|livraison)/i, /\bfranco\b/i] }, // avant « trop élevé » : « frais de port trop élevés »
   { objection: "too_expensive", patterns: [/trop cher/i, /prix (trop )?élevé/i, /trop élevé/i, /\bremise\b/i, /réduction/i, /geste commercial/i, /baisser (le|vos) prix/i] },
-  { objection: "stock_available", patterns: [/encore du stock/i, /il nous en reste/i, /stock suffisant/i, /déjà (du|en) stock/i, /pas encore écoulé/i] },
+  { objection: "not_selling", patterns: [/ne se vend pas/i, /se vend mal/i, /ne tourne pas/i, /tourne mal/i, /invendu/i, /ne part pas/i] },
+  { objection: "stock_available", patterns: [/trop de stock/i, /beaucoup de stock/i, /il (m['’]|nous )en reste/i, /encore du stock/i, /il nous en reste/i, /stock suffisant/i, /déjà (du|en) stock/i, /pas encore écoulé/i] },
   { objection: "budget", patterns: [/budget/i, /trésorerie/i] },
   { objection: "delivery", patterns: [/frais de port/i, /livraison/i, /transport/i, /franco/i] },
   { objection: "lead_time", patterns: [/délai/i, /quand (pourriez|pouvez)/i, /date de livraison/i, /au plus vite/i] },
@@ -123,7 +136,7 @@ const RULES: { objection: Objection; patterns: RegExp[] }[] = [
 export function mockAnalyzeReply(text: string): ReplyAnalysis {
   const t = sanitizeText(text, 6000);
   const discount = t.match(/(\d{1,2}(?:[.,]\d{1,2})?)\s?%/);
-  const qty = t.match(/(\d{1,6})\s?(unités|pièces|colis|cartons|pcs)/i);
+  const qty = t.match(/(\d{1,6})\s?(unités|pièces|colis|cartons|pcs)/i) ?? (() => { const m = t.match(/(?:il (?:m['’]|nous )en reste|il (?:me|nous) reste|j['’]en ai encore|nous en avons encore|reste encore)\s+(?:encore\s+)?(\d{1,6})/i); return m ? ([m[0], m[1], "unités"] as unknown as RegExpMatchArray) : null; })();
   const price = t.match(/(\d{1,6}(?:[.,]\d{1,2})?)\s?(€|euros?)\s?(HT)?/i);
   if (/désinscri|ne plus recevoir|retirez[- ]moi|\bstop\b/i.test(t))
     return { intent: "unsubscribe", objection: null, requestedDiscountPct: null, requestedQuantity: null, targetPrice: null, sentiment: "negative", summary: "Le client demande à ne plus être sollicité.", nextAction: "Inscrire l'adresse en liste d'opposition et cesser les envois." };
@@ -160,6 +173,7 @@ const OBJECTION_ARGUMENTS: Record<Objection, string> = {
   no_time: "Je comprends que votre emploi du temps est chargé. Je vous propose de valider la commande directement par retour d'email, ou un échange de 10 minutes au moment qui vous convient.",
   refusal: "Je prends bonne note de votre retour et vous remercie de votre réponse. Je reste à votre disposition pour vos prochains besoins.",
   no_response: "Je me permets de revenir vers vous concernant notre proposition.",
+  not_selling: "Merci pour ce retour, c'est précieux. Je ne veux pas vous laisser des références qui ne tournent pas : j'ai regardé vos données de vente.",
 };
 
 export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
@@ -203,6 +217,14 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
   }
 
   const o = ctx.analysis.objection ?? "no_response";
+  if (ctx.playbook && ctx.playbook.strategy !== "respect" && o !== "refusal") return playbookReply(ctx, ctx.playbook, { v, wa, hello, sign, subject, join, unknownLine });
+  if (ctx.playbook?.strategy === "respect" && (o === "no_need" || ctx.escalate))
+    return {
+      subject,
+      body: join([hello, wa ? null : "", ctx.escalate ? "Merci pour votre retour. Je transmets votre demande à votre commercial, qui reprend le dossier avec vous." : "Entendu, je prends bonne note et je respecte votre décision. Je reste à votre disposition si votre besoin évolue.", ...sign]),
+      proposedDiscountPct: null,
+      rationale: "Décision du client respectée : aucune nouvelle proposition.",
+    };
   // Objection prix / budget / concurrence : on défend la valeur avec les faits calculés par le système, puis on propose d'ajuster.
   const priceLike = o === "too_expensive" || o === "budget" || o === "competition";
   const valueFacts = priceLike && ctx.salesFacts?.length ? ctx.salesFacts.slice(0, wa ? 2 : 3) : [];
@@ -230,6 +252,44 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
     rationale: ctx.escalate
       ? "Demande au-delà du plafond de remise : transfert au commercial, valeur de l'offre défendue."
       : `Réponse à l'objection « ${o} » en défendant la valeur de l'offre${proposed ? `, geste de ${proposed} % dans la limite de la politique` : ""}.`,
+  };
+}
+
+const PLAYBOOK_OPENING: Partial<Record<Objection, (dynamic: boolean) => string>> = {
+  too_expensive: (d) => d ? "Je comprends, et je ne veux surtout pas vous faire acheter plus que nécessaire. J'ai repris l'analyse de vos achats :" : "Je comprends votre attention au prix. J'ai repris l'analyse de vos achats :",
+  budget: () => "Je comprends la contrainte budgétaire. J'ai recalé la proposition sur vos références prioritaires :",
+  stock_available: () => "Merci pour cette précision sur votre stock. J'ai recalculé votre couverture :",
+  no_need: () => "Entendu. Avant de clore, un point d'attention issu de vos données :",
+  not_selling: () => OBJECTION_ARGUMENTS.not_selling,
+};
+
+const lc = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+function playbookReply(
+  ctx: ObjectionCtx, pb: PlaybookCtx,
+  t: { v: Voice; wa: boolean; hello: string | null; sign: string[]; subject: string; join: (p: (string | null)[]) => string; unknownLine: string | null },
+): ObjectionReply {
+  const o = ctx.analysis.objection ?? "too_expensive";
+  const gap = t.wa ? null : "";
+  const parts: (string | null)[] = [t.hello, gap, (PLAYBOOK_OPENING[o] ?? PLAYBOOK_OPENING.too_expensive!)(t.v.tone === "dynamic")];
+  if (pb.declaredStock) parts.push(`• Stock déclaré : ${Number(pb.declaredStock.qty)} pièce(s)${pb.declaredStock.productName ? ` de « ${pb.declaredStock.productName} »` : " (référence à préciser)"}.`);
+  parts.push(...pb.counterArguments.slice(0, t.wa ? 2 : 3).map((a) => `• ${a}`));
+  if (pb.removed.length) parts.push(gap, pb.removed.length === 1 ? `J'ai retiré « ${pb.removed[0]!.name} » : ${lc(pb.removed[0]!.reason)}` : "J'ai retiré :", ...(pb.removed.length > 1 ? pb.removed.slice(0, 3).map((r) => `• « ${r.name} » : ${lc(r.reason)}`) : []));
+  if (pb.revised) {
+    const docs = pb.revised.documents.length ? (t.wa ? " Je vous joins la proposition en PDF." : " Vous trouverez ci-joint la proposition et l'analyse de couverture détaillée (Excel, avec photos et niveau de confiance).") : "";
+    parts.push(gap, `Nouvelle proposition ${pb.revised.number} : ${fmt(pb.revised.totalHt)} HT au lieu de ${fmt(pb.revised.originalTotalHt)} HT, ajustée à votre rythme de vente.${docs}`);
+  } else if (pb.followUpDate) {
+    parts.push(gap, `D'après ces éléments, votre stock couvre vos besoins pour l'instant : je reviens vers vous le ${fmtDate(pb.followUpDate)} pour refaire le point.`);
+  }
+  if (ctx.escalate) parts.push(gap, "Votre demande de remise dépasse ce que je peux accorder : je la transmets à votre commercial.");
+  if (t.unknownLine) parts.push(gap, t.unknownLine);
+  if (pb.counterArguments.some((a) => /estimation/.test(a))) parts.push(gap, t.wa ? "(Estimations d'après vos achats : vos chiffres de vente me permettraient d'affiner.)" : "Ces chiffres sont des estimations calculées à partir de vos achats ; si vous me transmettez votre stock ou vos sorties caisse, j'affine l'analyse.");
+  if (pb.question) parts.push(gap, pb.question);
+  return {
+    subject: t.subject,
+    body: t.join([...parts, ...t.sign]),
+    proposedDiscountPct: null,
+    rationale: pb.revised ? `Objection « ${o} » traitée par l'analyse : offre révisée ${pb.revised.number}.` : `Objection « ${o} » : offre défendue avec les données${pb.followUpDate ? ", reprise de contact planifiée" : ""}.`,
   };
 }
 

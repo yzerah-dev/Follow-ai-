@@ -19,6 +19,11 @@ test("scénario principal : réassort → offre → supports → email → objec
   await page.getByRole("link", { name: "Maison Martin & Fils" }).click();
   await page.waitForURL(/\/clients\/[0-9a-f-]{36}$/);
   await expect(page.getByText("Prochaine action recommandée par LÉA")).toBeVisible();
+  // Couverture de stock : estimations étiquetées, Excel illustré téléchargeable
+  await expect(page.getByTestId("coverage")).toContainText("Couverture de stock");
+  const xlsx = await page.request.get(`${page.url().replace(/\/clients\//, "/api/customers/")}/coverage`);
+  expect(xlsx.status()).toBe(200);
+  expect(xlsx.headers()["content-type"]).toContain("spreadsheetml");
   await expect(page.getByText("Réassort probable de 4 références").first()).toBeVisible();
   // Développement du client : objectif CA, produits permanents, plan
   await expect(page.getByTestId("target")).toContainText("Objectif annuel");
@@ -105,6 +110,8 @@ test("isolation : une autre entreprise ne peut pas ouvrir un client de JONAS", a
   await expect(other.getByText("Maison Martin & Fils")).toHaveCount(0);
   const asset = await other.request.get(url.replace("/clients/", "/api/assets/"));
   expect(asset.status()).toBe(404);
+  const coverage = await other.request.get(`${url.replace("/clients/", "/api/customers/")}/coverage`);
+  expect(coverage.status()).toBe(404);
   await other.close();
 });
 
