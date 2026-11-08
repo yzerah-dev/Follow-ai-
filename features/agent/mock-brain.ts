@@ -5,7 +5,7 @@
  */
 import { OBJECTION_LABEL, type EmailDraft, type ObjectionReply, type ReplyAnalysis, type Objection, type ChatAnswer } from "./schemas";
 import { sanitizeText } from "@/lib/security/untrusted";
-import { parseVoice, signoff, emoji, type Voice } from "./voice";
+import { parseVoice, signoff, pushSignature, emoji, type Voice } from "./voice";
 import { referenceAnswer, proveOpening, RESEARCH_QUESTIONS } from "@/lib/ai/lea-objection-handler";
 import { CLOSINGS } from "@/lib/ai/lea-sales-playbook";
 
@@ -428,7 +428,7 @@ export function mockMeetingProposal(ctx: MeetingCtx): EmailDraft {
     ctx.newProductNames.length ? `vous présenter ${ctx.newProductNames.length === 1 ? "une nouveauté adaptée" : `${ctx.newProductNames.length} nouveautés adaptées`} à votre assortiment (${ctx.newProductNames.slice(0, 3).join(", ")})` : null,
   ].filter(Boolean).join(" et ");
   const body = ctx.channel === "whatsapp"
-    ? `${greeting(ctx.contact).replace(/,$/, " !")}\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?${emoji(v, "whatsapp", "📅")}\n${signoff(v, ctx.senderName, ctx.companyName, "whatsapp")[0]}`
+    ? `${greeting(ctx.contact).replace(/,$/, " !")}\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?${emoji(v, "whatsapp", "📅")}\n${pushSignature(ctx.companyName)}`
     : `${greeting(ctx.contact)}
 
 Je vous propose un rendez-vous de 20 minutes ${where} pour ${reasons}.

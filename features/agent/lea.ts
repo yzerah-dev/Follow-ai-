@@ -177,7 +177,7 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
   let template: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (channel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || offer.customer_name;
-    const t = buildTemplate("offre_disponible", [name, offerHook(hookFacts), offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", `${sender.voice.assistantTitle} de ${sender.companyName}`]);
+    const t = buildTemplate("offre_disponible", [name, offerHook(hookFacts), offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", sender.companyName]);
     body = t.text;
     subject = null;
     template = t.template;
@@ -497,7 +497,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   let ftemplate: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (fchannel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || "";
-    const tpl = buildTemplate("relance_offre", [name || "à vous", offer?.number ?? "", `${sender.voice.assistantTitle} de ${sender.companyName}`]);
+    const tpl = buildTemplate("relance_offre", [name || "à vous", offer?.number ?? "", sender.companyName]);
     draft = { ...draft, subject: draft.subject, body: tpl.text };
     ftemplate = tpl.template;
   }
@@ -567,7 +567,7 @@ export async function draftMeetingProposal(db: Db, orgId: string, opportunityId:
   let template: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (channel === "whatsapp") {
     const name = [contact.ctx?.salutation === "Mme" ? "Madame" : contact.ctx?.salutation === "M." ? "Monsieur" : null, contact.ctx?.lastName ?? contact.ctx?.firstName].filter(Boolean).join(" ") || opp.customer_name;
-    const t = buildTemplate("proposition_rdv", [name, MEETING_FORMAT_LABEL[format], `${sender.voice.assistantTitle} de ${sender.companyName}`]);
+    const t = buildTemplate("proposition_rdv", [name, MEETING_FORMAT_LABEL[format], sender.companyName]);
     body = t.text;
     template = t.template;
   }

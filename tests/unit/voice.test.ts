@@ -20,7 +20,7 @@ describe("Voix de LÉA", () => {
     expect(e.subject).toMatch(/^Votre réassort est prêt/);
     expect(e.body).toContain("Répondez simplement « OK »");
     expect(e.body).toContain("meilleures ventes du moment");
-    expect(e.body).toContain("LÉA, assistante commerciale de JONAS");
+    expect(e.body).toContain("Léa de chez JONAS");
     expect(e.body).toContain("Pour Bruno");
     expect(checkMessage(e.body, { allowedDiscountPct: null, personalizedAllowed: true }).ok).toBe(true);
   });
@@ -45,7 +45,7 @@ describe("Voix de LÉA", () => {
   });
   it("consigne IA : ton, présentation et interdits", () => {
     const p = voicePrompt(dynamic, "JONAS");
-    expect(p).toContain("LÉA, assistante commerciale de JONAS");
+    expect(p).toContain("Léa de chez JONAS");
     expect(p).toContain("Ne cite jamais un autre client");
     expect(parseVoice({ tone: "inconnu" }).tone).toBe("warm");
   });

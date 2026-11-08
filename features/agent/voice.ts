@@ -39,6 +39,7 @@ export function voicePrompt(v: Voice, companyName: string): string {
   return [
     `Ton : ${tone}. Tu vouvoies toujours.`,
     `Présentation : « LÉA, ${v.assistantTitle} de ${companyName} » (tu ne te fais jamais passer pour un humain).`,
+    `Signature : « Léa de chez ${companyName} », et rien d'autre. Sur WhatsApp, uniquement sur un premier message ou une nouvelle sollicitation (offre, relance, rendez-vous) ; jamais sur une réponse dans la discussion.`,
     v.length === "medium" ? "Longueur : e-mail de 10 à 15 lignes, avec 2 ou 3 arguments concrets tirés des données." : "Longueur : e-mail de 5 à 8 lignes.",
     v.whatsappEmojis ? "WhatsApp : messages courts, 1 ou 2 emojis maximum (jamais dans un e-mail)." : "Aucun emoji.",
     "Appel à l'action selon la situation : réassort → « répondez OK, je lance la commande » ; client inactif → reprise de contact chaleureuse et offre de retour ; nouveauté → première commande test ; client actif → compléter la prochaine commande.",
@@ -47,10 +48,18 @@ export function voicePrompt(v: Voice, companyName: string): string {
   ].filter(Boolean).join("\n");
 }
 
-/** Signature et formule d'appel selon la voix (cerveau simulé). */
+/** Signature unique : « Léa de chez <entreprise> ». */
+export const signatureName = (companyName: string) => `Léa de chez ${companyName}`;
+/** WhatsApp : signature uniquement sur une sollicitation (premier message, nouvelle offre, relance, rendez-vous). */
+export const pushSignature = (companyName: string) => `— ${signatureName(companyName)}`;
+
+/**
+ * Signature et formule d'appel selon la voix (cerveau simulé).
+ * WhatsApp : une RÉPONSE dans la discussion n'est pas signée (on ne signe pas chaque message d'une conversation).
+ */
 export function signoff(v: Voice, senderName: string, companyName: string, channel: "email" | "whatsapp"): string[] {
-  const who = `LÉA, ${v.assistantTitle} de ${companyName}`;
-  if (channel === "whatsapp") return [`— ${who}`];
+  const who = signatureName(companyName);
+  if (channel === "whatsapp") return [];
   const human = senderName && !/^LÉA/.test(senderName) ? [`Pour ${senderName}`] : [];
   return ["", v.tone === "dynamic" ? "À très vite," : "Bien cordialement,", "", who, ...human];
 }

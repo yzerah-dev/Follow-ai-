@@ -36,7 +36,7 @@ describe("LÉA autonome — journée de travail", () => {
     const msg = (await q<{ status: string; sent_autonomously: boolean; body: string; attachments: unknown[] }>(`select status, sent_autonomously, body, attachments from messages where conversation_id = $1`, [hero.id]))[0]!;
     expect(msg).toMatchObject({ status: "simulated_sent", sent_autonomously: true });
     expect(msg.body).toContain("Bonjour Monsieur Martin");
-    expect(msg.body).toContain("LÉA");
+    expect(msg.body).toContain("Léa de chez");
     expect(msg.attachments).toHaveLength(2); // PDF + Excel validés automatiquement (contrôles OK)
     const offer = (await q<{ status: string }>(`select status from offers where id = $1`, [hero.offer_id]))[0]!;
     expect(offer.status).toBe("sent");

@@ -34,7 +34,7 @@ describe("Règle WhatsApp des 24 h", () => {
 describe("Modèles WhatsApp", () => {
   it("remplit les variables et nettoie les paramètres", () => {
     const t = buildTemplate("relance_offre", ["Monsieur\nMartin", "OF-2026-00001", "JONAS"]);
-    expect(t.text).toBe("Bonjour Monsieur Martin 👋 Je reviens vers vous au sujet de la proposition OF-2026-00001, elle est toujours valable. Je vous prépare la commande ? Un simple « OK » suffit. — LÉA, JONAS");
+    expect(t.text).toBe("Bonjour Monsieur Martin 👋 Je reviens vers vous au sujet de la proposition OF-2026-00001, elle est toujours valable. Je vous prépare la commande ? Un simple « OK » suffit. — Léa de chez JONAS");
     expect(t.template).toEqual({ name: "relance_offre", language: "fr", params: ["Monsieur Martin", "OF-2026-00001", "JONAS"] });
     expect(() => buildTemplate("relance_offre", ["x"])).toThrow(/3 paramètre/);
   });
@@ -108,10 +108,11 @@ describe("Style des réponses selon le canal", () => {
     offer: { number: "OF-1", totalHt: "100", validUntil: null }, allowedDiscountPct: null, escalate: false, senderName: "LÉA", companyName: "JONAS",
     answers: ["Votre franco de port est de 800,00 € HT."], unknownLabels: [] as string[],
   };
-  it("WhatsApp : signé LÉA, salue quand le client salue, remercie et conclut vers la commande", () => {
+  it("WhatsApp : réponse non signée, salue quand le client salue, remercie et conclut vers la commande", () => {
     const first = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 0 });
     expect(first.body.startsWith("Bonjour Monsieur Martin !")).toBe(true);
-    expect(first.body).toContain("— LÉA, assistante commerciale de JONAS");
+    expect(first.body).not.toContain("—"); // une réponse dans la discussion n'est pas signée
+    expect(first.body).not.toContain("LÉA");
     expect(first.body).not.toContain("Bien cordialement");
     expect(first.body).toContain("Merci pour votre message");
     expect(first.body).toContain("On lance la commande ?");

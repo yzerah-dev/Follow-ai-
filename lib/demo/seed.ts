@@ -425,7 +425,7 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
       [orgId, cu.id, ct.contact_id, at(9.3), at(9.1)]);
     await insertMany(db, "messages", ["organization_id", "conversation_id", "direction", "channel", "from_address", "to_address", "body", "status", "sent_at", "received_at", "handled", "ai_generated", "provider_message_id"], [
       [orgId, conv.rows[0]!.id, "inbound", "whatsapp", ct.mobile, null, "Bonjour, ma dernière livraison est-elle partie ?", "received", null, at(9), true, false, `demo-wa-${crypto.randomUUID()}`],
-      [orgId, conv.rows[0]!.id, "outbound", "whatsapp", "LÉA (WhatsApp Business)", ct.mobile, "Bonjour ! Je vérifie auprès de la logistique et votre commercial vous confirme la date d'expédition dans la journée. — LÉA", "simulated_sent", at(9.05), null, true, true, `demo-wa-${crypto.randomUUID()}`],
+      [orgId, conv.rows[0]!.id, "outbound", "whatsapp", "LÉA (WhatsApp Business)", ct.mobile, "Bonjour ! Je vérifie auprès de la logistique et votre commercial vous confirme la date d'expédition dans la journée.", "simulated_sent", at(9.05), null, true, true, `demo-wa-${crypto.randomUUID()}`],
       [orgId, conv.rows[0]!.id, "inbound", "whatsapp", ct.mobile, null, "Super, merci 👍", "received", null, at(9.1), true, false, `demo-wa-${crypto.randomUUID()}`],
     ]);
   }
