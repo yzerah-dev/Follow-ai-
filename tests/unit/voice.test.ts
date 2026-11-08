@@ -50,3 +50,18 @@ describe("Voix de LÉA", () => {
     expect(parseVoice({ tone: "inconnu" }).tone).toBe("warm");
   });
 });
+
+describe("Former LÉA : messages modèles", () => {
+  it("les exemples entrent dans la consigne de l'IA, isolés, avec interdiction d'en reprendre les chiffres", async () => {
+    const { parseVoice, voicePrompt } = await import("@/features/agent/voice");
+    const v = parseVoice({ examples: [{ id: "a", situation: "nouveaute", channel: "whatsapp", text: "Bonjour Monsieur Friakh, j'espère que vous allez bien ! Le tarif est de 5,80, souhaitez-vous en réserver ?" }] });
+    const p = voicePrompt(v, "JONAS");
+    expect(p).toContain("Monsieur Friakh");
+    expect(p).toMatch(/Interdit : reprendre un prix/);
+    expect(p).toMatch(/<untrusted_style_examples|style_examples/);
+  });
+  it("une voix sans exemples reste valide (rétrocompatible)", async () => {
+    const { parseVoice } = await import("@/features/agent/voice");
+    expect(parseVoice({ tone: "warm" }).examples).toEqual([]);
+  });
+});

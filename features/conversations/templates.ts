@@ -9,15 +9,15 @@ export const WHATSAPP_TEMPLATES = {
   // Catégorie « marketing » (message commercial). {{2}} = accroche calculée par le système (offerHook), jamais par l'IA.
   offre_disponible: {
     language: "fr",
-    text: "Bonjour {{1}} 👋 {{2}} Je vous ai préparé la proposition {{3}} : {{4}} HT, valable jusqu'au {{5}}, le document est joint. Je vous la valide ? Un simple « OK » en réponse suffit, je m'occupe du reste. — Léa de chez {{6}}",
+    text: "Bonjour {{1}}, j'espère que vous allez bien et que tout se passe bien de votre côté ! {{2}} Je vous ai préparé une proposition ({{3}}) de {{4}} HT, valable jusqu'au {{5}}, je vous la joins. Souhaitez-vous que je la valide ?\nMerci d'avance pour votre retour,\nLéa de chez {{6}}",
   },
   relance_offre: {
     language: "fr",
-    text: "Bonjour {{1}} 👋 Je reviens vers vous au sujet de la proposition {{2}}, elle est toujours valable. Je vous prépare la commande ? Un simple « OK » suffit. — Léa de chez {{3}}",
+    text: "Bonjour {{1}}, j'espère que vous allez bien ! Je me permets de revenir vers vous au sujet de la proposition {{2}}, elle est toujours valable. Souhaitez-vous que je vous prépare la commande ?\nMerci d'avance pour votre retour,\nLéa de chez {{3}}",
   },
   proposition_rdv: {
     language: "fr",
-    text: "Bonjour {{1}}, je vous propose un point de 20 minutes {{2}} pour faire le tour de vos références et vous présenter nos nouveautés. Quel créneau vous conviendrait ? Répondez simplement à ce message. — Léa de chez {{3}}",
+    text: "Bonjour {{1}}, j'espère que vous allez bien ! Je vous propose un point de 20 minutes {{2}} pour faire le tour de vos références et vous présenter nos nouveautés. Quel créneau vous conviendrait ?\nMerci d'avance pour votre retour,\nLéa de chez {{3}}",
   },
 } as const;
 

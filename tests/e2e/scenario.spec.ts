@@ -177,7 +177,7 @@ test("WhatsApp : discussion visible et LÉA répond aux questions du client", as
   await page.getByRole("button", { name: "Simuler la réponse du client" }).click();
   await expect(page.getByTestId("lea-analysis").last()).toContainText("Question");
   const lea = page.getByTestId("message-outbound").last();
-  await expect(lea).toContainText("On lance la commande ?");
+  await expect(lea).toContainText("Souhaitez-vous que je lance la commande ?");
   await expect(lea).not.toContainText("Léa de chez"); // réponse dans la discussion : pas de signature
   await expect(lea).toContainText("Envoyé seul par LÉA");
   await expect(page.getByText(/Fenêtre WhatsApp ouverte/)).toBeVisible();

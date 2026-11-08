@@ -103,9 +103,9 @@ export type HookFacts = { opportunityType: string | null; salesFacts: string[]; 
 export function offerHook(f: HookFacts): string {
   const limited = f.salesFacts.find((s) => s.startsWith("Stock limité"));
   if (limited) return `${limited} Je préfère vous prévenir avant qu'il ne parte.`;
-  if (f.opportunityType === "reorder" && f.usualInOffer > 0) return `Au rythme de vos dernières commandes, vos références habituelles arrivent bientôt en fin de stock chez vous : il ne faudrait pas rater de ventes.`;
-  if (f.opportunityType === "dormant_customer") return "Cela fait un moment qu'on ne s'est pas parlé, et j'ai de quoi relancer vos ventes.";
-  if (f.newProductNames.length) return `On vient de recevoir des nouveautés qui collent parfaitement à votre magasin, dont « ${f.newProductNames[0]} ».`;
+  if (f.opportunityType === "reorder" && f.usualInOffer > 0) return "Au rythme de vos dernières commandes, vos références habituelles arrivent bientôt en fin de stock chez vous, et ce serait dommage de rater des ventes !";
+  if (f.opportunityType === "dormant_customer") return "Cela fait un moment que nous n'avons pas eu le plaisir de travailler ensemble, et j'ai de belles choses à vous proposer !";
+  if (f.newProductNames.length) return `Nous avons de nouvelles références qui correspondent parfaitement à votre magasin, dont « ${f.newProductNames[0]} » !`;
   if (f.salesFacts.length) return f.salesFacts[0]!;
   if (f.usualInOffer > 0) return "J'ai repris vos références qui marchent le mieux chez vous pour que vous ne soyez jamais en rupture.";
   return "J'ai sélectionné pour vous des références adaptées à votre magasin.";

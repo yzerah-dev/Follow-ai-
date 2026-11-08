@@ -33,6 +33,15 @@ const JONAS_VOICE = {
     "Terminer par une question fermée qui fait avancer (ex. « préférez-vous lancer l'opération début novembre ou début janvier ? »).",
     "Formules : « Je reste à votre disposition », « Dans l'attente de votre retour », « Bien cordialement ».",
   ].join("\n"),
+  // Message modèle fourni par JONAS le 2026-11-08 (ton uniquement : son prix et ses affirmations ne sont jamais repris).
+  examples: [
+    {
+      id: "jonas-arrivage-casseroles",
+      situation: "nouveaute",
+      channel: "whatsapp",
+      text: "Bonjour Monsieur Friakh, j'espère que vous allez bien et que tout se passe bien de votre côté ! Chez Jonas cette semaine nous avons reçu un lot de casseroles par 3 à un prix imbattable ! Je pense que cette offre est une opportunité imbattable pour vous ! Nous en avons peu en stock ! Le tarif est de 5,80 voici la fiche produit en image, souhaitez-vous en réserver ?\nMerci d'avance pour votre retour,\nLéa",
+    },
+  ],
 };
 
 export const DEMO_PASSWORD = "demo-follow-ai";

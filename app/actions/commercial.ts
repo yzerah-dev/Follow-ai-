@@ -21,6 +21,7 @@ import { draftOfferEmail } from "@/features/agent/lea";
 import { decideMessage, sendManualMessage, simulateCustomerReply } from "@/features/conversations/service";
 import { runOpportunityScan } from "@/features/opportunities/service";
 import { runAutopilot } from "@/features/agent/autopilot";
+import { parseVoice, EXAMPLE_SITUATIONS } from "@/features/agent/voice";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -363,7 +364,9 @@ export async function updateVoiceAction(_: ActionResult | null, form: FormData):
   const r = await run(isAdmin, async (db, ctx) => {
     const s = voiceFormSchema.parse(Object.fromEntries(form.entries()));
     if (/\d+\s?%|\d+[.,]?\d*\s?€/.test(s.styleNotes)) throw new Error("Les consignes de style ne doivent pas contenir de chiffres (prix, remises, marges) : LÉA les tire des données.");
-    const voice = { tone: s.tone, length: s.length, whatsappEmojis: s.whatsappEmojis === "on", assistantTitle: s.assistantTitle, styleNotes: s.styleNotes };
+    // Les messages modèles se gèrent à part : on les conserve.
+    const current = parseVoice((await db.query<{ brand_voice: unknown }>(`select brand_voice from organization_settings where organization_id = $1`, [ctx.org.organizationId])).rows[0]?.brand_voice);
+    const voice = { tone: s.tone, length: s.length, whatsappEmojis: s.whatsappEmojis === "on", assistantTitle: s.assistantTitle, styleNotes: s.styleNotes, examples: current.examples };
     // Relances : un canal explicite par rang ; « même canal » en fin de liste est simplement omis.
     const plan = [s.followup1, s.followup2];
     while (plan.length && plan[plan.length - 1] === "same") plan.pop();
@@ -372,6 +375,36 @@ export async function updateVoiceAction(_: ActionResult | null, form: FormData):
       [ctx.org.organizationId, voice, s.defaultChannel, plan]);
     await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "settings.voice_updated", undefined, { ...voice, defaultChannel: s.defaultChannel, followupChannels: plan });
     return "Voix de LÉA enregistrée.";
+  });
+  revalidatePath("/parametres");
+  return r;
+}
+
+const exampleFormSchema = z.object({ situation: z.enum(EXAMPLE_SITUATIONS), channel: z.enum(["whatsapp", "email"]), text: z.string().trim().min(20, "Message trop court.").max(1500) });
+
+/** « Former LÉA » : ajoute un message modèle (ton et structure uniquement ; les chiffres viennent toujours des données). */
+export async function addVoiceExampleAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const r = await run(isAdmin, async (db, ctx) => {
+    const s = exampleFormSchema.parse(Object.fromEntries(form.entries()));
+    const row = (await db.query<{ brand_voice: unknown }>(`select brand_voice from organization_settings where organization_id = $1`, [ctx.org.organizationId])).rows[0];
+    const v = parseVoice(row?.brand_voice);
+    if (v.examples.length >= 30) throw new Error("30 messages modèles maximum : supprimez-en un d'abord.");
+    const example = { id: crypto.randomUUID(), ...s };
+    await db.query(`update organization_settings set brand_voice = $2 where organization_id = $1`, [ctx.org.organizationId, { ...v, examples: [...v.examples, example] }]);
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "settings.voice_example_added", undefined, { situation: s.situation, channel: s.channel });
+    return "Message modèle ajouté : LÉA s'en inspire pour son ton.";
+  });
+  revalidatePath("/parametres");
+  return r;
+}
+
+export async function removeVoiceExampleAction(id: string): Promise<ActionResult> {
+  const r = await run(isAdmin, async (db, ctx) => {
+    const row = (await db.query<{ brand_voice: unknown }>(`select brand_voice from organization_settings where organization_id = $1`, [ctx.org.organizationId])).rows[0];
+    const v = parseVoice(row?.brand_voice);
+    await db.query(`update organization_settings set brand_voice = $2 where organization_id = $1`, [ctx.org.organizationId, { ...v, examples: v.examples.filter((e) => e.id !== id) }]);
+    await audit(db, ctx.org.organizationId, { type: "user", userId: ctx.userId }, "settings.voice_example_removed", undefined, { id });
+    return "Message modèle supprimé.";
   });
   revalidatePath("/parametres");
   return r;

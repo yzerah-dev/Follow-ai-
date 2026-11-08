@@ -177,3 +177,12 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 | OAuth Gmail / M365 | Envoi et lecture réels | App Google Cloud / Entra ID, scopes listés dans INTEGRATIONS.md | Envoi simulé |
 | WhatsApp / SMS / téléphonie | Canaux additionnels | Comptes fournisseurs officiels | Email |
 | Données réelles JONAS | Calibrer LÉA | Exports CSV/XLSX clients, produits, tarifs, factures (IMPORT_FORMATS.md) | Démo fictive |
+
+## 2026-11-08 — Ton commercial naturel et « Former LÉA »
+- WhatsApp : accroche calculée par le système (`offerHook`), salutation quand le client salue, réponses non signées ;
+  signature « Léa de chez … » + « Merci d'avance pour votre retour, » uniquement sur les sollicitations (offre, relance, rendez-vous).
+- Modèles Meta réécrits dans le style de l'équipe JONAS (à soumettre à Meta, catégorie marketing pour offre et relance).
+- « Former LÉA » (Paramètres) : messages modèles par situation, stockés dans `brand_voice.examples`, injectés dans la consigne de l'IA réelle
+  (isolés via `wrapUntrusted`, interdiction d'en reprendre prix / stocks / affirmations). Le moteur déterministe ne les lit pas.
+- Objection prix : « c'est un peu cher », « c'est cher », « pas donné » reconnus (trouvé en test manuel).
+- Non fait : apprentissage à partir des corrections humaines ; évaluation avec l'IA réelle (pas de clé).

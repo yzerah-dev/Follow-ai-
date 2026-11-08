@@ -13,6 +13,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { SettingsForm } from "./settings-form";
 import { AutonomyForm } from "./autonomy-form";
 import { VoiceForm } from "./voice-form";
+import { ExamplesForm } from "./examples-form";
 import { SalesTargetsForm } from "./sales-targets-form";
 import { loadOrgObjectives } from "@/features/targets/repo";
 import { parseVoice } from "@/features/agent/voice";
@@ -125,6 +126,15 @@ export default async function SettingsPage() {
               />
             );
           })()}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="former-lea">
+        <CardHeader>
+          <CardTitle>Former LÉA — vos messages modèles</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ExamplesForm readOnly={!admin} examples={parseVoice(data.s.brand_voice).examples} />
         </CardContent>
       </Card>
 

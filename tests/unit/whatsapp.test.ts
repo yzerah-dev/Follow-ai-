@@ -34,7 +34,7 @@ describe("Règle WhatsApp des 24 h", () => {
 describe("Modèles WhatsApp", () => {
   it("remplit les variables et nettoie les paramètres", () => {
     const t = buildTemplate("relance_offre", ["Monsieur\nMartin", "OF-2026-00001", "JONAS"]);
-    expect(t.text).toBe("Bonjour Monsieur Martin 👋 Je reviens vers vous au sujet de la proposition OF-2026-00001, elle est toujours valable. Je vous prépare la commande ? Un simple « OK » suffit. — Léa de chez JONAS");
+    expect(t.text).toBe("Bonjour Monsieur Martin, j'espère que vous allez bien ! Je me permets de revenir vers vous au sujet de la proposition OF-2026-00001, elle est toujours valable. Souhaitez-vous que je vous prépare la commande ?\nMerci d'avance pour votre retour,\nLéa de chez JONAS");
     expect(t.template).toEqual({ name: "relance_offre", language: "fr", params: ["Monsieur Martin", "OF-2026-00001", "JONAS"] });
     expect(() => buildTemplate("relance_offre", ["x"])).toThrow(/3 paramètre/);
   });
@@ -115,7 +115,7 @@ describe("Style des réponses selon le canal", () => {
     expect(first.body).not.toContain("LÉA");
     expect(first.body).not.toContain("Bien cordialement");
     expect(first.body).toContain("Merci pour votre message");
-    expect(first.body).toContain("On lance la commande ?");
+    expect(first.body).toContain("Souhaitez-vous que je lance la commande ?");
     expect(first.body).not.toContain("•");
     // En cours de discussion : pas de « Bonjour » répété… sauf si le client vient de dire bonjour.
     const later = mockObjectionReply({ ...ctx, channel: "whatsapp", turn: 2 });

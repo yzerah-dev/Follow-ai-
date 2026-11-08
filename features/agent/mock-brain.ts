@@ -242,7 +242,7 @@ export function mockObjectionReply(ctx: ObjectionCtx): ObjectionReply {
       subject,
       body: join([hello, `Merci pour votre message${emoji(v, "whatsapp", "🙏")}`, ...ctx.answers,
         pitch ? `${pitch}${emoji(v, "whatsapp", "🔥")}` : null, unknownLine,
-        `On lance la commande ? Un simple « OK » et je m'occupe de tout${emoji(v, "whatsapp", "🚀")}`, ...sign]),
+        "Souhaitez-vous que je lance la commande ? Un simple « OK » suffit.", ...sign]),
       proposedDiscountPct: null,
       rationale: `Réponse factuelle à partir des données (${ctx.answers.length} élément(s))${pitch ? ", argument de vente vérifié" : ""}${ctx.unknownLabels.length ? `, ${ctx.unknownLabels.join(", ")} transmis au commercial` : ""}, conclusion vers la commande.`,
     };
@@ -428,7 +428,7 @@ export function mockMeetingProposal(ctx: MeetingCtx): EmailDraft {
     ctx.newProductNames.length ? `vous présenter ${ctx.newProductNames.length === 1 ? "une nouveauté adaptée" : `${ctx.newProductNames.length} nouveautés adaptées`} à votre assortiment (${ctx.newProductNames.slice(0, 3).join(", ")})` : null,
   ].filter(Boolean).join(" et ");
   const body = ctx.channel === "whatsapp"
-    ? `${greeting(ctx.contact).replace(/,$/, " !")}\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?${emoji(v, "whatsapp", "📅")}\n${pushSignature(ctx.companyName)}`
+    ? `${greeting(ctx.contact)} j'espère que vous allez bien !\nJe vous propose un point de 20 minutes ${where} pour ${reasons}. Quel créneau vous conviendrait cette semaine ou la suivante ?${emoji(v, "whatsapp", "📅")}\n${pushSignature(ctx.companyName)}`
     : `${greeting(ctx.contact)}
 
 Je vous propose un rendez-vous de 20 minutes ${where} pour ${reasons}.
