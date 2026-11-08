@@ -139,3 +139,10 @@ describe("accroche du premier message WhatsApp", () => {
     expect(offerHook({ opportunityType: null, salesFacts: [], usualInOffer: 0, newProductNames: [] })).toBe("J'ai sélectionné pour vous des références adaptées à votre magasin.");
   });
 });
+
+describe("objection prix formulée simplement", () => {
+  it("« c'est un peu cher » est une objection prix, pas une lecture humaine", async () => {
+    const { mockAnalyzeReply } = await import("@/features/agent/mock-brain");
+    for (const t of ["Bonjour Léa, c'est un peu cher pour moi en ce moment", "C'est cher", "Votre prix est assez cher", "c'est pas donné"]) expect(mockAnalyzeReply(t).objection).toBe("too_expensive");
+  });
+});

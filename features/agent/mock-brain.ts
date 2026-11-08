@@ -131,7 +131,7 @@ export function mockOfferEmail(ctx: OfferEmailCtx): EmailDraft {
 const RULES: { objection: Objection; patterns: RegExp[] }[] = [
   { objection: "competition", patterns: [/concurren/i, /autre fournisseur/i, /ailleurs/i, /moins cher chez/i] },
   { objection: "delivery", patterns: [/frais de (port|livraison)/i, /\bfranco\b/i] }, // avant « trop élevé » : « frais de port trop élevés »
-  { objection: "too_expensive", patterns: [/trop cher/i, /prix (trop )?élevé/i, /trop élevé/i, /\bremise\b/i, /réduction/i, /geste commercial/i, /baisser (le|vos) prix/i] },
+  { objection: "too_expensive", patterns: [/trop cher/i, /\b(un peu|assez|bien|très|plutôt) cher/i, /c('|’|\s)?est cher/i, /hors de prix/i, /pas donné/i, /prix (trop )?élevé/i, /trop élevé/i, /\bremise\b/i, /réduction/i, /geste commercial/i, /baisser (le|vos) prix/i] },
   { objection: "think_later", patterns: [/je vais r[ée]fl[ée]chir/i, /laissez-moi r[ée]fl[ée]chir/i, /on en reparle/i, /je dois y r[ée]fl[ée]chir/i, /je vous redis/i] },
   { objection: "existing_supplier", patterns: [/d[ée]j[àa] (un|avec un|mon) fournisseur/i, /travaille d[ée]j[àa] avec/i, /nous avons d[ée]j[àa] nos fournisseurs/i] },
   { objection: "not_selling", patterns: [/ne se vend pas/i, /se vend mal/i, /ne tourne pas/i, /tourne mal/i, /invendu/i, /ne part pas/i] },
