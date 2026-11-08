@@ -177,7 +177,16 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
   let template: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (channel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || offer.customer_name;
-    const t = buildTemplate("offre_disponible", [name, offerHook(hookFacts), offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", sender.companyName]);
+    // Client dormant : message de reprise de contact (offre + rendez-vous avec son commercial), sinon offre classique avec accroche.
+    const rep = hookFacts.opportunityType === "dormant_customer"
+      ? (await db.query<{ first: string | null }>(
+          `select split_part(nullif(trim(m.display_name), ''), ' ', 1) as first from customers c join organization_members m on m.user_id = c.owner_user_id and m.organization_id = c.organization_id where c.id = $1`, [offer.customer_id])).rows[0]?.first ?? null
+      : undefined;
+    const t = rep !== undefined
+      ? buildTemplate("reactivation_client", [name, sender.companyName, offer.number,
+          `${hookFacts.usualInOffer > 0 ? "avec les références que vous aviez l'habitude d'acheter" : "avec une sélection choisie pour votre magasin"}${hookFacts.newProductNames.length ? ` ainsi que des nouveautés choisies pour vous, dont « ${hookFacts.newProductNames[0]} »` : ""}`,
+          rep ?? "votre commercial", sender.companyName])
+      : buildTemplate("offre_disponible", [name, offerHook(hookFacts), offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", sender.companyName]);
     body = t.text;
     subject = null;
     template = t.template;

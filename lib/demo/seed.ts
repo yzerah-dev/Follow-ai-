@@ -41,6 +41,12 @@ const JONAS_VOICE = {
       channel: "whatsapp",
       text: "Bonjour Monsieur Friakh, j'espère que vous allez bien et que tout se passe bien de votre côté ! Chez Jonas cette semaine nous avons reçu un lot de casseroles par 3 à un prix imbattable ! Je pense que cette offre est une opportunité imbattable pour vous ! Nous en avons peu en stock ! Le tarif est de 5,80 voici la fiche produit en image, souhaitez-vous en réserver ?\nMerci d'avance pour votre retour,\nLéa",
     },
+    {
+      id: "jonas-client-dormant",
+      situation: "dormant",
+      channel: "whatsapp",
+      text: "Bonjour Monsieur Dupont, j'espère que vous allez bien ! Cela fait longtemps qu'on ne vous a pas vu chez Jonas ! J'ai pensé à vous et je vous ai préparé une offre exceptionnelle avec les références permanentes que vous aviez l'habitude d'acheter ainsi qu'une offre exclusive imbattable ! Ce serait bien qu'on puisse programmer un rendez-vous pour en discuter et avancer ! Êtes-vous disponible lundi 8 à 14 h ou jeudi 11 à 10 h ? Karim se fera un plaisir de vous recevoir au showroom ou de vous voir en visio !",
+    },
   ],
 };
 
@@ -403,7 +409,7 @@ async function seedOrganization(db: Db, spec: OrgSpec, orgId: string, commercial
   ];
   // Modèles WhatsApp déclarés (en réel : à faire approuver par Meta avec les textes de features/conversations/templates.ts)
   await insertMany(db, "communication_connections", ["organization_id", "channel", "provider", "status", "simulation_enabled", "display_name", "config"],
-    conns.map((x) => [orgId, ...x, x[0] === "whatsapp" ? { approvedTemplates: ["offre_disponible", "relance_offre", "proposition_rdv"], templatesStatus: x[1] === "simulated" ? "déclarés (simulation)" : "à soumettre à Meta" } : {}]));
+    conns.map((x) => [orgId, ...x, x[0] === "whatsapp" ? { approvedTemplates: ["offre_disponible", "reactivation_client", "relance_offre", "proposition_rdv"], templatesStatus: x[1] === "simulated" ? "déclarés (simulation)" : "à soumettre à Meta" } : {}]));
 
   // ---------------- Conversations historiques simulées ----------------
   for (const cu of customers.slice(1, 6)) {

@@ -11,6 +11,12 @@ export const WHATSAPP_TEMPLATES = {
     language: "fr",
     text: "Bonjour {{1}}, j'espère que vous allez bien et que tout se passe bien de votre côté ! {{2}} Je vous ai préparé une proposition ({{3}}) de {{4}} HT, valable jusqu'au {{5}}, je vous la joins. Souhaitez-vous que je la valide ?\nMerci d'avance pour votre retour,\nLéa de chez {{6}}",
   },
+  // Client dormant (catégorie « marketing ») : reprise de contact chaleureuse + offre + rendez-vous avec le commercial attitré.
+  // {{4}} = contenu réel de l'offre, {{5}} = prénom du commercial attitré (ou « votre commercial ») : jamais de créneau inventé.
+  reactivation_client: {
+    language: "fr",
+    text: "Bonjour {{1}}, j'espère que vous allez bien ! Cela fait longtemps que nous ne vous avons pas vu chez {{2}} ! J'ai pensé à vous et je vous ai préparé une offre ({{3}}) {{4}}, je vous la joins. Ce serait bien que l'on puisse programmer un rendez-vous pour en discuter et avancer : {{5}} se fera un plaisir de vous recevoir au showroom ou de vous voir en visio. Quel jour vous arrangerait ?\nMerci d'avance pour votre retour,\nLéa de chez {{6}}",
+  },
   relance_offre: {
     language: "fr",
     text: "Bonjour {{1}}, j'espère que vous allez bien ! Je me permets de revenir vers vous au sujet de la proposition {{2}}, elle est toujours valable. Souhaitez-vous que je vous prépare la commande ?\nMerci d'avance pour votre retour,\nLéa de chez {{3}}",

@@ -146,3 +146,13 @@ describe("objection prix formulée simplement", () => {
     for (const t of ["Bonjour Léa, c'est un peu cher pour moi en ce moment", "C'est cher", "Votre prix est assez cher", "c'est pas donné"]) expect(mockAnalyzeReply(t).objection).toBe("too_expensive");
   });
 });
+
+describe("client dormant : message de reprise de contact", () => {
+  it("offre + rendez-vous avec le commercial attitré, sans créneau inventé", () => {
+    const t = buildTemplate("reactivation_client", ["Monsieur Dupont", "JONAS", "OF-2026-00012", "avec les références que vous aviez l'habitude d'acheter", "Karim", "JONAS"]);
+    expect(t.text).toContain("Cela fait longtemps que nous ne vous avons pas vu chez JONAS !");
+    expect(t.text).toContain("Karim se fera un plaisir de vous recevoir au showroom ou de vous voir en visio.");
+    expect(t.text).toMatch(/Quel jour vous arrangerait \?\nMerci d'avance pour votre retour,\nLéa de chez JONAS$/);
+    expect(t.text).not.toMatch(/\d{1,2} h|lundi|jeudi/); // aucun créneau tant que l'agenda n'est pas connecté
+  });
+});

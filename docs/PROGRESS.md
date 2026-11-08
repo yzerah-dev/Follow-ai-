@@ -186,3 +186,5 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
   (isolés via `wrapUntrusted`, interdiction d'en reprendre prix / stocks / affirmations). Le moteur déterministe ne les lit pas.
 - Objection prix : « c'est un peu cher », « c'est cher », « pas donné » reconnus (trouvé en test manuel).
 - Non fait : apprentissage à partir des corrections humaines ; évaluation avec l'IA réelle (pas de clé).
+- Client dormant (WhatsApp) : modèle `reactivation_client` dans le style JONAS (offre réelle + rendez-vous showroom / visio avec le
+  commercial attitré, prénom tiré de `customers.owner_user_id`). Aucun créneau proposé tant que l'agenda du commercial n'est pas connecté.

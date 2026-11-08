@@ -81,7 +81,7 @@ export function examplesPrompt(examples: VoiceExample[]): string {
   const text = examples.map((e, i) => `Exemple ${i + 1} — ${EXAMPLE_SITUATION_LABEL[e.situation]} (${e.channel === "whatsapp" ? "WhatsApp" : "e-mail"}) :\n${e.text}`).join("\n\n");
   return [
     "Messages modèles écrits par l'équipe commerciale : écris COMME EUX (même chaleur, mêmes formules d'ouverture et de clôture, même longueur, même façon de poser la question finale), pour qu'on ne puisse pas distinguer ton message de celui d'un commercial de l'équipe.",
-    "Interdit : reprendre un prix, une quantité, un stock, une date ou une affirmation de ces exemples (« prix imbattable », « peu en stock »…) ; n'affirme que ce que disent les données fournies. N'imite pas les fautes d'orthographe.",
+    "Interdit : reprendre un prix, une quantité, un stock, une date, un créneau de rendez-vous, un prénom ou une affirmation de ces exemples (« prix imbattable », « offre exclusive », « peu en stock »…) ; n'affirme que ce que disent les données fournies. Ne propose jamais de jour ni d'heure précis : l'agenda du commercial n'est pas connecté, demande au client ce qui l'arrange. N'imite pas les fautes d'orthographe.",
     wrapUntrusted("style_examples", text, 12000),
   ].join("\n");
 }
