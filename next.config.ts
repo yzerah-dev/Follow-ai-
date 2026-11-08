@@ -10,6 +10,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["pg", "exceljs", "pdf-lib"],
+  // Excel renvoyé par le client (3 Mo max, contrôlé dans l'action) : la limite par défaut des actions serveur est 1 Mo.
+  experimental: { serverActions: { bodySizeLimit: "4mb" } },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

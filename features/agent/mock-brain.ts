@@ -101,7 +101,6 @@ export function mockOfferEmail(ctx: OfferEmailCtx): EmailDraft {
     ? `\n\nJ'y ai ajouté ${ctx.newProductNames.length === 1 ? "une nouveauté susceptible" : `${ctx.newProductNames.length} nouveautés susceptibles`} de compléter votre assortiment : ${ctx.newProductNames.join(", ")}.`
     : "";
   const facts = v.length === "medium" && ctx.salesFacts?.length ? `\n\nPourquoi maintenant :\n${ctx.salesFacts.slice(0, 3).map((f) => `• ${f}`).join("\n")}` : "";
-  const validity = fmtDate(ctx.offer.validUntil);
   const cta = angle?.cta ?? "Je peux enregistrer votre commande dès votre retour, ou organiser un rendez-vous de présentation en visioconférence si vous le souhaitez.";
   const body = [
     greeting(ctx.contact), "",
@@ -109,14 +108,15 @@ export function mockOfferEmail(ctx: OfferEmailCtx): EmailDraft {
     refs,
     facts ? facts.slice(1) : null,
     "",
-    `Le montant de la proposition s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? `, valable jusqu'au ${validity}` : ""}. Vous trouverez le détail dans l'offre ${ctx.offer.number} jointe.`,
+    // Règles JONAS : ni numéro d'offre ni date de fin dans le message (ils figurent dans les documents joints).
+    `La sélection s'élève à ${fmt(ctx.offer.totalHt)} HT ; vous trouverez le détail dans le PDF et l'Excel joints. Si vous souhaitez ajuster les quantités, renvoyez-moi simplement l'Excel avec vos quantités adaptées.`,
     "", cta,
     ...signoff(v, ctx.senderName, ctx.companyName, "email"),
   ].filter((l): l is string => l !== null).join("\n").replace(/\n{3,}/g, "\n\n");
   const subjects: Record<string, string> = { reorder: "Votre réassort est prêt", dormant_customer: "On repart ensemble ?", new_product: "Nos nouveautés pour votre magasin", cross_sell: "Pour compléter votre commande", back_in_stock: "De retour en stock" };
   const subjectLead = angle && ctx.opportunityType ? subjects[ctx.opportunityType] : null;
   return {
-    subject: subjectLead ? `${subjectLead} — proposition ${ctx.offer.number}` : personalized ? `Votre réassort — proposition ${ctx.offer.number}` : `Proposition commerciale ${ctx.offer.number}`,
+    subject: subjectLead ?? (personalized ? "Votre réassort est prêt" : `Votre sélection ${ctx.companyName}`),
     body,
     personalizationBasis: personalized ? "purchase_history" : "generic",
     arguments: [

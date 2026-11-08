@@ -54,7 +54,11 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
        from messages m left join organization_members om on om.organization_id = m.organization_id and om.user_id = m.created_by and not m.ai_generated
        where m.conversation_id = $1 and m.status <> 'draft' order by m.created_at`, [id])).rows;
     const simulatedChannel = !(await d.query(`select 1 from communication_connections where organization_id = $1 and channel = $2 and status = 'connected'`, [ctx.org.organizationId, c.channel])).rowCount;
-    return { data: { c, messages, simulatedChannel }, role: ctx.org.role };
+    // Excel de l'offre en cours : le client le télécharge, adapte les quantités et le renvoie.
+    const excelId = c.offer_id
+      ? (await d.query<{ id: string }>(`select id from generated_assets where offer_id = $1 and kind = 'offer_excel' order by created_at desc limit 1`, [c.offer_id])).rows[0]?.id ?? null
+      : null;
+    return { data: { c, messages, simulatedChannel, excelId }, role: ctx.org.role };
   });
   if (!data) notFound();
   const { c, messages } = data;
@@ -179,7 +183,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
 
       {writable && env().DEMO_TOOLS && (wa ? c.contact_phone : c.contact_email) && messages.some((m) => m.direction === "outbound" && ["sent", "simulated_sent"].includes(m.status)) ? (
         <div className="mt-4">
-          <SimulateReply conversationId={c.id} />
+          <SimulateReply conversationId={c.id} excelId={data.excelId} />
         </div>
       ) : null}
     </div>

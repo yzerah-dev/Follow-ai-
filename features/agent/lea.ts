@@ -20,7 +20,7 @@ import { answerFromFacts, detectTopics, type Facts } from "./answers";
 import { buildTemplate } from "@/features/conversations/templates";
 import { toE164, isMobileFr } from "@/lib/phone";
 import { formatMoney } from "@/lib/money";
-import { formatDate, toIsoDate } from "@/lib/utils";
+import { toIsoDate } from "@/lib/utils";
 import { checkMessage, amountsInText } from "./guards";
 import { loadPolicy, loadAutonomy } from "@/features/settings/policy-repo";
 import { decideAutonomy, type AutonomyDecision } from "./autonomy";
@@ -95,15 +95,15 @@ async function loadFacts(db: Db, customerId: string | null, offerId: string | nu
 }
 
 /**
- * Règles de relance de l'entreprise, vérifiées de façon déterministe (le texte de l'IA est remplacé par le modèle sûr si l'une est enfreinte) :
+ * Règles de sollicitation de l'entreprise (offre et relances), vérifiées de façon déterministe (le texte de l'IA est remplacé par le modèle sûr si l'une est enfreinte) :
  * pas de numéro d'offre, pas de date de fin, pas de marchandise réservée, pas de baisse de quantités proposée.
  */
-export function followupRuleViolations(body: string, offer: { number: string; validUntil: string | null } | null): string[] {
+export function outreachRuleViolations(body: string, offer: { number: string; validUntil: string | null } | null): string[] {
   const out: string[] = [];
-  if (offer && body.includes(offer.number)) out.push("Relance : numéro d'offre cité.");
-  if (/valable jusqu|date de (fin|validit)|expire|jusqu'au \d/i.test(body)) out.push("Relance : date de fin d'offre citée.");
-  if (/r[ée]serv[ée]e?s?\b|mise?s? de c[ôo]t[ée]|bloqu[ée]e?s?/i.test(body)) out.push("Relance : marchandise présentée comme réservée.");
-  if (/(baisser|r[ée]duire|diminuer|ajuster [àa] la baisse) (les |vos )?quantit/i.test(body)) out.push("Relance : baisse de quantités proposée.");
+  if (offer && body.includes(offer.number)) out.push("Sollicitation : numéro d'offre cité.");
+  if (/valable jusqu|date de (fin|validit)|expire|jusqu'au \d/i.test(body)) out.push("Sollicitation : date de fin d'offre citée.");
+  if (/r[ée]serv[ée]e?s?\b|mise?s? de c[ôo]t[ée]|bloqu[ée]e?s?/i.test(body)) out.push("Sollicitation : marchandise présentée comme réservée.");
+  if (/(baisser|r[ée]duire|diminuer|ajuster [àa] la baisse) (les |vos )?quantit/i.test(body)) out.push("Sollicitation : baisse de quantités proposée.");
   return out;
 }
 
@@ -161,6 +161,7 @@ export async function composeOfferEmail(db: Db, orgId: string, offerId: string, 
     ...sender,
   };
   const input = `Rédige l'email d'accompagnement de l'offre ci-dessous. Objectif : obtenir la commande ou un rendez-vous.
+Règles : ne cite ni le numéro de l'offre ni sa date de fin (ils sont dans les documents joints) ; ne dis jamais que la marchandise est réservée ; ne propose pas de baisser les quantités : si besoin, le client renvoie l'Excel joint avec ses quantités adaptées.
 Situation : ${opportunityType ?? "proposition"}. Arguments factuels utilisables : ${salesFacts.length ? salesFacts.join(" | ") : "aucun"}.
 Données vérifiées du système (seules sources autorisées) :
 ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
@@ -169,9 +170,10 @@ ${wrapUntrusted("system_data", JSON.stringify(context, null, 2))}`;
   const knownAmounts = [offer.total_ht, offer.discount_total_ht, ...lines.flatMap((l) => [l.line_total_ht])];
   const guard = checkMessage(draft.body, { allowedDiscountPct: maxLineDiscount > 0 ? maxLineDiscount : null, personalizedAllowed: history >= 3 && usual.length > 0, knownAmounts });
   const guardNotes: string[] = [];
-  if (!guard.ok) {
+  const rules = outreachRuleViolations(`${draft.subject}\n${draft.body}`, { number: offer.number, validUntil: offer.valid_until });
+  if (!guard.ok || rules.length) {
     // Repli sûr : gabarit déterministe, et on garde la trace du rejet.
-    guardNotes.push(...guard.reasons);
+    guardNotes.push(...(guard.ok ? [] : guard.reasons), ...rules);
     draft = mockOfferEmail(context);
   }
   const hookFacts: HookFacts = { opportunityType, salesFacts, usualInOffer: lines.filter((l) => usual.includes(l.reference)).length, newProductNames: context.newProductNames };
@@ -196,10 +198,10 @@ export async function draftOfferEmail(db: Db, orgId: string, offerId: string, ac
           `select split_part(nullif(trim(m.display_name), ''), ' ', 1) as first from customers c join organization_members m on m.user_id = c.owner_user_id and m.organization_id = c.organization_id where c.id = $1`, [offer.customer_id])).rows[0]?.first ?? null
       : undefined;
     const t = rep !== undefined
-      ? buildTemplate("reactivation_client", [name, sender.companyName, offer.number,
+      ? buildTemplate("reactivation_client", [name, sender.companyName,
           `${hookFacts.usualInOffer > 0 ? "avec les références que vous aviez l'habitude d'acheter" : "avec une sélection choisie pour votre magasin"}${hookFacts.newProductNames.length ? ` ainsi que des nouveautés choisies pour vous, dont « ${hookFacts.newProductNames[0]} »` : ""}`,
           rep ?? "votre commercial", sender.companyName])
-      : buildTemplate("offre_disponible", [name, offerHook(hookFacts), offer.number, formatMoney(offer.total_ht), offer.valid_until ? formatDate(offer.valid_until, { day: "numeric", month: "long", year: "numeric" }) : "nouvel ordre", sender.companyName]);
+      : buildTemplate("offre_disponible", [name, offerHook(hookFacts), formatMoney(offer.total_ht), sender.companyName]);
     body = t.text;
     subject = null;
     template = t.template;
@@ -499,7 +501,7 @@ Règles de relance : ne cite ni le numéro de l'offre ni sa date de fin ; ne dis
   const guardNotes: string[] = [];
   const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: false, knownAmounts: [offer?.total_ht] });
   if (!guard.ok) guardNotes.push(...guard.reasons);
-  const rules = followupRuleViolations(draft.body, offer ? { number: offer.number, validUntil: offer.valid_until } : null);
+  const rules = outreachRuleViolations(draft.body, offer ? { number: offer.number, validUntil: offer.valid_until } : null);
   if (rules.length) guardNotes.push(...rules);
   if (!guard.ok || rules.length) draft = mockFollowup(context);
   // Canal de la relance : celui prévu pour ce numéro de relance (Paramètres), sinon celui de la conversation.

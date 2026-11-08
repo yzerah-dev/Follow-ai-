@@ -149,7 +149,7 @@ describe("objection prix formulée simplement", () => {
 
 describe("client dormant : message de reprise de contact", () => {
   it("offre + rendez-vous avec le commercial attitré, sans créneau inventé", () => {
-    const t = buildTemplate("reactivation_client", ["Monsieur Dupont", "JONAS", "OF-2026-00012", "avec les références que vous aviez l'habitude d'acheter", "Karim", "JONAS"]);
+    const t = buildTemplate("reactivation_client", ["Monsieur Dupont", "JONAS", "avec les références que vous aviez l'habitude d'acheter", "Karim", "JONAS"]);
     expect(t.text).toContain("Cela fait longtemps que nous ne vous avons pas vu chez JONAS !");
     expect(t.text).toContain("Karim se fera un plaisir de vous recevoir au showroom ou de vous voir en visio.");
     expect(t.text).toMatch(/Quel jour vous arrangerait \?\nMerci d'avance pour votre retour,\nLéa de chez JONAS$/);
@@ -159,20 +159,20 @@ describe("client dormant : message de reprise de contact", () => {
 
 describe("règles de relance JONAS", () => {
   it("détecte numéro d'offre, date de fin, marchandise réservée et baisse de quantités", async () => {
-    const { followupRuleViolations } = await import("@/features/agent/lea");
+    const { outreachRuleViolations } = await import("@/features/agent/lea");
     const o = { number: "OF-2026-00012", validUntil: "2026-12-08" };
-    expect(followupRuleViolations("Votre proposition OF-2026-00012 est valable jusqu'au 8 décembre.", o)).toHaveLength(2);
-    expect(followupRuleViolations("J'ai mis de côté vos pièces.", o)).toEqual(["Relance : marchandise présentée comme réservée."]);
-    expect(followupRuleViolations("Je peux réduire les quantités si besoin.", o)).toEqual(["Relance : baisse de quantités proposée."]);
-    expect(followupRuleViolations("Renvoyez-moi l'Excel avec vos quantités adaptées.", o)).toEqual([]);
+    expect(outreachRuleViolations("Votre proposition OF-2026-00012 est valable jusqu'au 8 décembre.", o)).toHaveLength(2);
+    expect(outreachRuleViolations("J'ai mis de côté vos pièces.", o)).toEqual(["Sollicitation : marchandise présentée comme réservée."]);
+    expect(outreachRuleViolations("Je peux réduire les quantités si besoin.", o)).toEqual(["Sollicitation : baisse de quantités proposée."]);
+    expect(outreachRuleViolations("Renvoyez-moi l'Excel avec vos quantités adaptées.", o)).toEqual([]);
   });
   it("le modèle sûr respecte ces règles", async () => {
     const { mockFollowup } = await import("@/features/agent/mock-brain");
-    const { followupRuleViolations } = await import("@/features/agent/lea");
+    const { outreachRuleViolations } = await import("@/features/agent/lea");
     const offer = { number: "OF-2026-00012", totalHt: "1200", validUntil: "2026-12-08" };
     for (const attempt of [1, 2]) {
       const d = mockFollowup({ contact: { salutation: "M.", firstName: null, lastName: "Martin" }, offer, attempt, senderName: "LÉA", companyName: "JONAS" } as never);
-      expect(followupRuleViolations(`${d.subject}\n${d.body}`, offer)).toEqual([]);
+      expect(outreachRuleViolations(`${d.subject}\n${d.body}`, offer)).toEqual([]);
       expect(d.body).toContain("renvoyez-moi simplement l'Excel joint avec vos quantités adaptées");
     }
   });

@@ -3,6 +3,7 @@ import { audit } from "@/lib/security/audit";
 import { sanitizeText } from "@/lib/security/untrusted";
 import { dispatchMessage, normalizeAddress } from "./dispatch";
 import { analyzeInbound } from "@/features/agent/lea";
+import { handleClientExcel } from "@/features/agent/excel-return";
 
 export type MessageDecision = { decision: "approved" | "rejected"; note?: string; editedBody?: string; editedSubject?: string };
 
@@ -107,6 +108,21 @@ export async function simulateCustomerReply(db: Db, orgId: string, userId: strin
   // La réponse représente le CLIENT : LÉA agit sous sa propre identité (les règles d'autonomie s'appliquent).
   const analysis = await analyzeInbound(db, orgId, res.messageId, { userId: null }, { now: opts.now });
   return { inboundId: res.messageId, ...analysis };
+}
+
+/** Outil de démonstration : le client renvoie l'Excel de sa sélection (avec ses quantités) dans la conversation. */
+export async function simulateCustomerExcelReply(db: Db, orgId: string, userId: string, conversationId: string, file: { filename: string; buffer: Buffer }, body: string, opts: { now?: Date } = {}) {
+  const conv = (await db.query<{ channel: "email" | "whatsapp"; contact_email: string | null; contact_phone: string | null; subject: string | null }>(
+    `select c.channel, ct.email as contact_email, coalesce(ct.mobile, ct.phone) as contact_phone, c.subject
+     from conversations c left join contacts ct on ct.id = c.contact_id where c.id = $1 and c.organization_id = $2`, [conversationId, orgId])).rows[0];
+  const from = conv?.channel === "whatsapp" ? conv.contact_phone : conv?.contact_email;
+  if (!conv || !from) throw new Error("Conversation sans contact joignable sur ce canal.");
+  const res = await ingestInboundMessage(db, orgId, {
+    channel: conv.channel, from, subject: conv.channel === "email" ? (conv.subject ? `RE: ${conv.subject}` : "RE:") : null,
+    body: body.trim() || `📎 ${file.filename}`, providerMessageId: `sim-inbound-${crypto.randomUUID()}`, simulated: true, conversationId, receivedAt: opts.now,
+  });
+  await audit(db, orgId, { type: "user", userId }, "demo.excel_reply_simulated", { type: "conversation", id: conversationId }, { channel: conv.channel, filename: file.filename });
+  return handleClientExcel(db, orgId, res.messageId, file, { now: opts.now });
 }
 
 /** Un humain reprend la main et répond lui-même dans la discussion (mêmes contrôles d'envoi que LÉA). */

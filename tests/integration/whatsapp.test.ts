@@ -5,7 +5,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { withAgent, withUser } from "@/lib/database/client";
 import { runAutopilot } from "@/features/agent/autopilot";
-import { ingestInboundMessage, sendManualMessage, simulateCustomerReply } from "@/features/conversations/service";
+import { ingestInboundMessage, sendManualMessage, simulateCustomerReply, simulateCustomerExcelReply } from "@/features/conversations/service";
+import ExcelJS from "exceljs";
+import { getFile } from "@/lib/storage";
 import { analyzeInbound } from "@/features/agent/lea";
 import { resetTestDb, ids, privileged } from "./db";
 
@@ -36,7 +38,8 @@ describe("WhatsApp : LÉA engage et mène la discussion", () => {
     const m = await lastOutbound(waConv);
     expect(m).toMatchObject({ channel: "whatsapp", status: "simulated_sent", subject: null, sent_autonomously: true });
     expect(m.ai_analysis.template?.name).toBe("offre_disponible");
-    expect(m.body).toMatch(/^Bonjour .+, j'espère que vous allez bien .+ Je vous ai préparé une proposition \(OF-2026-\d{5}\)/);
+    expect(m.body).toMatch(/^Bonjour .+, j'espère que vous allez bien .+ Je vous ai préparé une sélection de [\d\s,]+€ HT/);
+    expect(m.body).not.toMatch(/OF-2026-\d{5}|valable jusqu/); // règles JONAS : ni numéro ni date de fin
     expect(m.body).toContain("Souhaitez-vous que je la valide ?");
     expect(m.body).toMatch(/Merci d'avance pour votre retour,\nLéa de chez .+$/); // nouvelle sollicitation : signée
     const att = (await q<{ attachments: { filename: string }[] }>(`select attachments from messages where conversation_id = $1 and direction = 'outbound'`, [waConv]))[0]!.attachments;
@@ -145,5 +148,59 @@ describe("Email : LÉA répond aussi aux questions par email", () => {
     expect(m.body).toMatch(/valable jusqu'au \d{1,2} \p{L}+ 2026/u);
     expect(m.body).toMatch(/€ HT, soit .+ € TTC/);
     expect(m.body).toMatch(/Bien cordialement|À très vite/);
+  });
+});
+
+describe("Le client renvoie l'Excel avec ses quantités", () => {
+  it("LÉA met la commande à jour (prix du catalogue, colisage), retire les lignes vidées et répond", async () => {
+    const conv = (await q<{ id: string; offer_id: string }>(
+      `select c.id, c.offer_id from conversations c join offers o on o.id = c.offer_id join contacts ct on ct.id = c.contact_id
+       where c.organization_id = $1 and c.channel = 'whatsapp' and o.status in ('sent','negotiation') and c.id <> $2
+         and not exists (select 1 from suppression_entries x where x.organization_id = c.organization_id and x.address = ct.mobile) limit 1`, [I.orgA, waConv]))[0]!;
+    expect(conv).toBeTruthy();
+    const before = await q<{ product_id: string; reference: string; quantity: string; unit_price_ht: string; units_per_case: number | null }>(
+      `select ol.product_id, p.reference, ol.quantity::text, ol.unit_price_ht::text, p.units_per_case from offer_lines ol join products p on p.id = ol.product_id where ol.offer_id = $1 order by ol.line_no`, [conv.offer_id]);
+    expect(before.length).toBeGreaterThanOrEqual(2);
+    const asset = (await q<{ storage_path: string }>(`select storage_path from generated_assets where offer_id = $1 and kind = 'offer_excel' order by created_at desc limit 1`, [conv.offer_id]))[0]!;
+
+    // Le client : 1re ligne à 1 pièce (hors colisage) avec un prix bidon, 2e ligne vidée.
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await getFile(asset.storage_path)) as unknown as ArrayBuffer);
+    const ws = wb.worksheets[0]!;
+    ws.getRow(8).getCell(6).value = 1;
+    ws.getRow(8).getCell(7).value = 0.01;
+    ws.getRow(9).getCell(6).value = null;
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const r = await withUser(I.bruno, (db) => simulateCustomerExcelReply(db, I.orgA, I.bruno, conv.id, { filename: "mes-quantites.xlsx", buffer }, "Voici mes quantités", { now: at(400) }));
+    expect(r.status).toBe("revised");
+    expect(r.dispatch?.status).toBe("sent");
+    const revised = r.revisedOfferId!;
+    const offers = await q<{ id: string; status: string; supersedes_offer_id: string | null }>(`select id, status, supersedes_offer_id from offers where id = any($1::uuid[])`, [[conv.offer_id, revised]]);
+    expect(offers.find((o) => o.id === conv.offer_id)!.status).toBe("superseded");
+    expect(offers.find((o) => o.id === revised)!.supersedes_offer_id).toBe(conv.offer_id);
+    const after = await q<{ product_id: string; quantity: string; unit_price_ht: string }>(`select product_id, quantity::text, unit_price_ht::text from offer_lines where offer_id = $1`, [revised]);
+    const first = after.find((l) => l.product_id === before[0]!.product_id)!;
+    expect(Number(first.quantity)).toBe(Math.max(1, before[0]!.units_per_case ?? 1)); // arrondi au colisage
+    expect(Number(first.unit_price_ht)).not.toBe(0.01); // le prix du fichier est ignoré
+    expect(after.some((l) => l.product_id === before[1]!.product_id)).toBe(false); // ligne vidée → retirée
+    expect(after.length).toBe(before.length - 1);
+    const m = await lastOutbound(conv.id);
+    expect(m.body).toMatch(/^Merci .+, c'est noté ! J'ai mis à jour votre commande avec vos quantités/);
+    expect(m.body).toContain("Retiré à votre demande");
+    expect(m.body).not.toMatch(/OF-2026-\d{5}/);
+    expect((await q<{ c: string }>(`select offer_id::text c from conversations where id = $1`, [conv.id]))[0]!.c).toBe(revised);
+    const inbound = (await q<{ attachments: { filename: string }[] }>(`select attachments from messages where conversation_id = $1 and direction = 'inbound' order by created_at desc limit 1`, [conv.id]))[0]!;
+    expect(inbound.attachments[0]!.filename).toBe("mes-quantites.xlsx");
+  });
+
+  it("fichier illisible : LÉA demande l'Excel d'origine, aucune offre créée", async () => {
+    const conv = (await q<{ id: string; offer_id: string }>(`select c.id, c.offer_id from conversations c join offers o on o.id = c.offer_id where c.organization_id = $1 and c.channel = 'whatsapp' and o.status in ('sent','negotiation') limit 1`, [I.orgA]))[0]!;
+    const n = async () => Number((await q<{ n: string }>(`select count(*) n from offers where organization_id = $1`, [I.orgA]))[0]!.n);
+    const before = await n();
+    const r = await withUser(I.bruno, (db) => simulateCustomerExcelReply(db, I.orgA, I.bruno, conv.id, { filename: "photo.xlsx", buffer: Buffer.from("pas un excel") }, "", { now: at(420) }));
+    expect(r.status).toBe("unreadable");
+    expect(await n()).toBe(before);
+    expect((await lastOutbound(conv.id)).body).toContain("Je n'arrive pas à le lire");
   });
 });

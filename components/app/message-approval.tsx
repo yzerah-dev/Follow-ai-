@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { decideMessageAction, sendManualReplyAction, simulateReplyAction, type ActionResult } from "@/app/actions/commercial";
+import { decideMessageAction, sendManualReplyAction, simulateReplyAction, simulateExcelReplyAction, type ActionResult } from "@/app/actions/commercial";
 
 export function MessageApproval({ messageId, conversationId, subject, body, writable, simulatedChannel }: { messageId: string; conversationId: string; subject: string; body: string; writable: boolean; simulatedChannel: boolean }) {
   const [s, setS] = useState(subject);
@@ -43,10 +43,12 @@ const SAMPLES = [
   "Bonjour, pourrions-nous organiser un rendez-vous en visio pour voir les nouveautés ?",
 ];
 
-export function SimulateReply({ conversationId }: { conversationId: string }) {
+export function SimulateReply({ conversationId, excelId }: { conversationId: string; excelId?: string | null }) {
   const [text, setText] = useState(SAMPLES[0]!);
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
+  const [excelPending, startExcel] = useTransition();
+  const [excelResult, setExcelResult] = useState<ActionResult | null>(null);
   return (
     <div className="space-y-2 rounded-lg border border-dashed border-warning/40 bg-warning-soft/50 p-4">
       <p className="text-[12px] font-semibold uppercase tracking-wide text-warning">Outil de démonstration — simuler une réponse client</p>
@@ -64,6 +66,25 @@ export function SimulateReply({ conversationId }: { conversationId: string }) {
         </Button>
         {result ? <span className={result.ok ? "text-[12.5px] text-success" : "text-[12.5px] text-danger"}>{result.ok ? result.message : result.error}</span> : null}
       </div>
+      <form
+        className="space-y-2 border-t border-warning/30 pt-3"
+        data-testid="simulate-excel"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          startExcel(async () => setExcelResult(await simulateExcelReplyAction(conversationId, fd)));
+        }}
+      >
+        <p className="text-[12.5px]">
+          Le client renvoie l’Excel avec ses quantités{excelId ? <> — <a className="text-primary underline" href={`/api/assets/${excelId}`}>télécharger l’Excel de la sélection</a>, modifiez la colonne des quantités, puis joignez-le :</> : " :"}
+        </p>
+        <input type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required aria-label="Excel du client" className="block w-full text-[12.5px]" />
+        <input type="text" name="body" placeholder="Message du client (facultatif)" aria-label="Message accompagnant l’Excel" className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px]" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="secondary" disabled={excelPending}>{excelPending ? "LÉA lit le fichier…" : "Envoyer l’Excel en tant que client"}</Button>
+          {excelResult ? <span className={excelResult.ok ? "text-[12.5px] text-success" : "text-[12.5px] text-danger"}>{excelResult.ok ? excelResult.message : excelResult.error}</span> : null}
+        </div>
+      </form>
     </div>
   );
 }

@@ -18,7 +18,9 @@ import { splitCustomerTarget, saveCustomerMonths, saveSalesTarget } from "@/feat
 import { createOfferFromOpportunity, createOfferDraft, OfferNotBuildable, suggestItemsForCustomer, decideOffer, acceptOfferAndPrepareOrder, markOfferLost } from "@/features/offers/service";
 import { decideAsset } from "@/features/creative-studio/service";
 import { draftOfferEmail } from "@/features/agent/lea";
-import { decideMessage, sendManualMessage, simulateCustomerReply } from "@/features/conversations/service";
+import { decideMessage, sendManualMessage, simulateCustomerReply, simulateCustomerExcelReply } from "@/features/conversations/service";
+import { isExcelFile } from "@/features/agent/excel-return";
+import { MAX_CLIENT_EXCEL_BYTES } from "@/features/offers/client-excel";
 import { runOpportunityScan } from "@/features/opportunities/service";
 import { runAutopilot } from "@/features/agent/autopilot";
 import { parseVoice, EXAMPLE_SITUATIONS } from "@/features/agent/voice";
@@ -128,6 +130,23 @@ export async function decideMessageAction(messageId: string, conversationId: str
     if (!res.sent) return "Brouillon refusé.";
     return res.simulated ? "Message validé — envoi SIMULÉ (aucun email réel)." : "Message envoyé.";
   }, { key: "send", limit: 30 });
+  revalidatePath(`/conversations/${conversationId}`);
+  revalidatePath("/");
+  return r;
+}
+
+/** Démonstration : le client renvoie l'Excel avec ses quantités. */
+export async function simulateExcelReplyAction(conversationId: string, form: FormData): Promise<ActionResult> {
+  if (!env().DEMO_TOOLS) return { ok: false, error: "Outils de démonstration désactivés." };
+  const file = form.get("file");
+  if (!(file instanceof File) || !isExcelFile(file.name, file.type)) return { ok: false, error: "Choisissez un fichier Excel (.xlsx)." };
+  if (file.size > MAX_CLIENT_EXCEL_BYTES) return { ok: false, error: "Fichier trop volumineux (3 Mo maximum)." };
+  const body = z.string().max(4000).parse(form.get("body") ?? "");
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const r = await run(canWrite, async (db, ctx) => {
+    const res = await simulateCustomerExcelReply(db, ctx.org.organizationId, ctx.userId, uuid.parse(conversationId), { filename: file.name, buffer }, body);
+    return `Excel reçu — ${res.summary}`;
+  }, { key: "simulate", limit: 20 });
   revalidatePath(`/conversations/${conversationId}`);
   revalidatePath("/");
   return r;

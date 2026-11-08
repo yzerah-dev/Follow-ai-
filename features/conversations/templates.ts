@@ -7,15 +7,16 @@ import type { MessageTemplate } from "@/lib/integrations/types";
 
 export const WHATSAPP_TEMPLATES = {
   // Catégorie « marketing » (message commercial). {{2}} = accroche calculée par le système (offerHook), jamais par l'IA.
+  // Règles JONAS : ni numéro d'offre ni date de fin dans le message (ils figurent dans le document joint).
   offre_disponible: {
     language: "fr",
-    text: "Bonjour {{1}}, j'espère que vous allez bien et que tout se passe bien de votre côté ! {{2}} Je vous ai préparé une proposition ({{3}}) de {{4}} HT, valable jusqu'au {{5}}, je vous la joins. Souhaitez-vous que je la valide ?\nMerci d'avance pour votre retour,\nLéa de chez {{6}}",
+    text: "Bonjour {{1}}, j'espère que vous allez bien et que tout se passe bien de votre côté ! {{2}} Je vous ai préparé une sélection de {{3}} HT, je vous la joins. Souhaitez-vous que je la valide ?\nMerci d'avance pour votre retour,\nLéa de chez {{4}}",
   },
   // Client dormant (catégorie « marketing ») : reprise de contact chaleureuse + offre + rendez-vous avec le commercial attitré.
-  // {{4}} = contenu réel de l'offre, {{5}} = prénom du commercial attitré (ou « votre commercial ») : jamais de créneau inventé.
+  // Ni numéro d'offre ni date de fin (règles JONAS). {{3}} = contenu réel de l'offre, {{4}} = prénom du commercial attitré (ou « votre commercial ») : jamais de créneau inventé.
   reactivation_client: {
     language: "fr",
-    text: "Bonjour {{1}}, j'espère que vous allez bien ! Cela fait longtemps que nous ne vous avons pas vu chez {{2}} ! J'ai pensé à vous et je vous ai préparé une offre ({{3}}) {{4}}, je vous la joins. Ce serait bien que l'on puisse programmer un rendez-vous pour en discuter et avancer : {{5}} se fera un plaisir de vous recevoir au showroom ou de vous voir en visio. Quel jour vous arrangerait ?\nMerci d'avance pour votre retour,\nLéa de chez {{6}}",
+    text: "Bonjour {{1}}, j'espère que vous allez bien ! Cela fait longtemps que nous ne vous avons pas vu chez {{2}} ! J'ai pensé à vous et je vous ai préparé une offre {{3}}, je vous la joins. Ce serait bien que l'on puisse programmer un rendez-vous pour en discuter et avancer : {{4}} se fera un plaisir de vous recevoir au showroom ou de vous voir en visio. Quel jour vous arrangerait ?\nMerci d'avance pour votre retour,\nLéa de chez {{5}}",
   },
   // Relance (règles JONAS) : ni numéro d'offre, ni date de fin, ni marchandise « réservée », ni baisse de quantités proposée.
   // En-tête document : l'Excel de l'offre, que le client renvoie avec ses quantités.

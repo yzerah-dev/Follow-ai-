@@ -192,3 +192,10 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
   le client est invité à renvoyer l'Excel avec ses quantités adaptées (Excel joint sur WhatsApp, PDF + Excel par e-mail).
   Règles vérifiées de façon déterministe (`followupRuleViolations`) : un texte d'IA qui les enfreint est remplacé par le modèle sûr.
 - Non fait : lecture automatique de l'Excel renvoyé par le client (mise à jour de l'offre à faire par le commercial).
+- Premier message d'offre (WhatsApp et e-mail) : ni numéro d'offre ni date de fin (ils restent dans le PDF / l'Excel joints) ;
+  contrôle déterministe `outreachRuleViolations` sur l'e-mail rédigé par l'IA.
+- Excel renvoyé par le client (`features/offers/client-excel.ts`, `features/agent/excel-return.ts`) : lecture référence/EAN + quantité
+  uniquement (prix du fichier ignorés), offre révisée au prix catalogue et au colisage (liée par `supersedes_offer_id`), lignes vidées retirées,
+  références inconnues / quantités illisibles → tâche commercial, réponse « C'est noté ! J'ai mis à jour votre commande… » selon l'autonomie.
+  Entrées : outil de simulation (Conversations) et webhook e-mail (pièces jointes base64). Non fait : téléchargement des documents WhatsApp
+  réels (API média Meta, connecteur non configuré).
