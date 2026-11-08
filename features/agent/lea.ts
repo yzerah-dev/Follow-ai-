@@ -94,6 +94,19 @@ async function loadFacts(db: Db, customerId: string | null, offerId: string | nu
   return { offer, customer: { francoAmount: cu?.franco_amount ?? null, minOrderAmount: cu?.min_order_amount ?? null, paymentTerms: cu?.payment_terms ?? null } };
 }
 
+/**
+ * Règles de relance de l'entreprise, vérifiées de façon déterministe (le texte de l'IA est remplacé par le modèle sûr si l'une est enfreinte) :
+ * pas de numéro d'offre, pas de date de fin, pas de marchandise réservée, pas de baisse de quantités proposée.
+ */
+export function followupRuleViolations(body: string, offer: { number: string; validUntil: string | null } | null): string[] {
+  const out: string[] = [];
+  if (offer && body.includes(offer.number)) out.push("Relance : numéro d'offre cité.");
+  if (/valable jusqu|date de (fin|validit)|expire|jusqu'au \d/i.test(body)) out.push("Relance : date de fin d'offre citée.");
+  if (/r[ée]serv[ée]e?s?\b|mise?s? de c[ôo]t[ée]|bloqu[ée]e?s?/i.test(body)) out.push("Relance : marchandise présentée comme réservée.");
+  if (/(baisser|r[ée]duire|diminuer|ajuster [àa] la baisse) (les |vos )?quantit/i.test(body)) out.push("Relance : baisse de quantités proposée.");
+  return out;
+}
+
 export type HookFacts = { opportunityType: string | null; salesFacts: string[]; usualInOffer: number; newProductNames: string[] };
 
 /**
@@ -477,17 +490,18 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   const res = await llm.structured({
     task: "draft_followup",
     system: leaSystem(sender.voice, sender.companyName),
-    input: `Rédige une relance courte et polie (relance n° ${t.attempt}) pour une proposition restée sans réponse. N'ajoute aucune remise ni promesse.\nDonnées :\n${wrapUntrusted("system_data", JSON.stringify(context))}`,
+    input: `Rédige une relance courte et polie (relance n° ${t.attempt}) pour une proposition restée sans réponse. N'ajoute aucune remise ni promesse.
+Règles de relance : ne cite ni le numéro de l'offre ni sa date de fin ; ne dis jamais que la marchandise est réservée, bloquée ou mise de côté ; ne propose jamais de baisser les quantités : invite le client à renvoyer l'Excel joint avec ses quantités adaptées. Chaque relance apporte un angle nouveau.\nDonnées :\n${wrapUntrusted("system_data", JSON.stringify(context))}`,
     schema: emailDraftSchema,
     context,
   });
   let draft = res.data;
   const guardNotes: string[] = [];
   const guard = checkMessage(draft.body, { allowedDiscountPct: null, personalizedAllowed: false, knownAmounts: [offer?.total_ht] });
-  if (!guard.ok) {
-    guardNotes.push(...guard.reasons);
-    draft = mockFollowup(context);
-  }
+  if (!guard.ok) guardNotes.push(...guard.reasons);
+  const rules = followupRuleViolations(draft.body, offer ? { number: offer.number, validUntil: offer.valid_until } : null);
+  if (rules.length) guardNotes.push(...rules);
+  if (!guard.ok || rules.length) draft = mockFollowup(context);
   // Canal de la relance : celui prévu pour ce numéro de relance (Paramètres), sinon celui de la conversation.
   let convId = t.conversation_id;
   let fchannel = (await db.query<{ channel: "email" | "whatsapp" }>(`select channel from conversations where id = $1`, [t.conversation_id])).rows[0]!.channel;
@@ -498,7 +512,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
       ?? (await db.query<{ id: string }>(
         `insert into conversations (organization_id, customer_id, contact_id, channel, subject, status, offer_id, last_message_at)
          values ($1,$2,$3,$4,$5,'open',$6, now()) returning id`,
-        [orgId, t.customer_id, contact.id, wanted, wanted === "email" && offer ? `Proposition ${offer.number}` : null, t.offer_id])).rows[0]!;
+        [orgId, t.customer_id, contact.id, wanted, wanted === "email" ? `Votre sélection ${sender.companyName}` : null, t.offer_id])).rows[0]!;
     convId = other.id;
     fchannel = wanted;
   }
@@ -506,7 +520,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
   let ftemplate: ReturnType<typeof buildTemplate>["template"] | null = null;
   if (fchannel === "whatsapp") {
     const name = [contact?.ctx?.salutation === "Mme" ? "Madame" : contact?.ctx?.salutation === "M." ? "Monsieur" : null, contact?.ctx?.lastName ?? contact?.ctx?.firstName].filter(Boolean).join(" ") || "";
-    const tpl = buildTemplate("relance_offre", [name || "à vous", offer?.number ?? "", sender.companyName]);
+    const tpl = buildTemplate("relance_offre", [name || "à vous", sender.companyName]);
     draft = { ...draft, subject: draft.subject, body: tpl.text };
     ftemplate = tpl.template;
   }
@@ -517,7 +531,7 @@ export async function draftFollowup(db: Db, orgId: string, taskId: string, opts:
     `insert into messages (organization_id, conversation_id, direction, channel, to_address, subject, body, status, ai_generated, ai_analysis)
      values ($1,$2,'outbound',$8,$3,$4,$5,$6,true,$7) returning id`,
     [orgId, convId, fchannel === "whatsapp" ? contact?.mobile ?? null : contact?.email ?? null, fchannel === "whatsapp" ? null : draft.subject, draft.body, automatic ? "approved" : "pending_approval",
-      { kind: "followup", attempt: t.attempt, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision, template: ftemplate }, fchannel],
+      { kind: "followup", attempt: t.attempt, simulatedAi: res.simulated, guardNotes, runId, autonomy: decision, template: ftemplate, attachExcel: fchannel === "whatsapp" }, fchannel],
   );
   await db.query(`update followup_tasks set status = 'done' where id = $1`, [taskId]);
   if (!automatic)

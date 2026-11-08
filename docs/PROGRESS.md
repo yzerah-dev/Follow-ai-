@@ -188,3 +188,7 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
 - Non fait : apprentissage à partir des corrections humaines ; évaluation avec l'IA réelle (pas de clé).
 - Client dormant (WhatsApp) : modèle `reactivation_client` dans le style JONAS (offre réelle + rendez-vous showroom / visio avec le
   commercial attitré, prénom tiré de `customers.owner_user_id`). Aucun créneau proposé tant que l'agenda du commercial n'est pas connecté.
+- Relances (règles JONAS) : ni numéro d'offre, ni date de fin, ni marchandise réservée, ni baisse de quantités proposée ;
+  le client est invité à renvoyer l'Excel avec ses quantités adaptées (Excel joint sur WhatsApp, PDF + Excel par e-mail).
+  Règles vérifiées de façon déterministe (`followupRuleViolations`) : un texte d'IA qui les enfreint est remplacé par le modèle sûr.
+- Non fait : lecture automatique de l'Excel renvoyé par le client (mise à jour de l'offre à faire par le commercial).

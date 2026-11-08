@@ -112,6 +112,11 @@ describe("Fenêtre WhatsApp et inconnus", () => {
     const m = await lastOutbound(conv!.id);
     expect(m.ai_analysis.template?.name).toBe("relance_offre");
     expect(m.status).toBe("simulated_sent");
+    // Règles JONAS : ni numéro d'offre ni date de fin ; l'Excel est joint pour que le client renvoie ses quantités.
+    expect(m.body).not.toMatch(/OF-2026-\d{5}|valable jusqu/);
+    expect(m.body).toContain("renvoyez-moi simplement l'Excel avec vos quantités adaptées");
+    const att = (await q<{ attachments: { filename: string }[] }>(`select attachments from messages where conversation_id = $1 and direction = 'outbound' order by created_at desc limit 1`, [conv!.id]))[0]!.attachments;
+    expect(att.map((a) => a.filename)).toEqual([expect.stringMatching(/\.xlsx$/)]);
   });
 
   it("numéro inconnu : conversation non identifiée, réponse soumise à validation", async () => {

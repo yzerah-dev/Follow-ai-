@@ -34,7 +34,7 @@ export function normalizeAddress(channel: Channel, raw: string): string | null {
   return toE164(raw);
 }
 
-type Meta = { template?: MessageTemplate | null; discountPct?: number | null; kind?: string; attempt?: number; attachOffer?: boolean };
+type Meta = { template?: MessageTemplate | null; discountPct?: number | null; kind?: string; attempt?: number; attachOffer?: boolean; attachExcel?: boolean };
 
 export async function dispatchMessage(
   db: Db,
@@ -103,11 +103,13 @@ export async function dispatchMessage(
   }
 
   const docs = m.offer_id
-    ? (await db.query<{ filename: string; storage_path: string; mime_type: string }>(
-        `select filename, storage_path, mime_type from generated_assets where offer_id = $1 and validation_status = 'approved' and kind in ('offer_pdf','offer_excel','coverage_excel') order by kind`, [m.offer_id])).rows
+    ? (await db.query<{ filename: string; storage_path: string; mime_type: string; kind: string }>(
+        `select filename, storage_path, mime_type, kind from generated_assets where offer_id = $1 and validation_status = 'approved' and kind in ('offer_pdf','offer_excel','coverage_excel') order by kind`, [m.offer_id])).rows
     : [];
-  // Email : PDF + Excel. WhatsApp : PDF uniquement (en-tête document du modèle d'offre, ou document dans la fenêtre de 24 h).
-  const attachments = (m.channel === "email" ? docs : template || meta.attachOffer ? docs.filter((d) => d.mime_type === "application/pdf").slice(0, 1) : [])
+  // Email : PDF + Excel. WhatsApp : un seul document — l'Excel de l'offre pour une relance (le client le renvoie avec ses quantités),
+  // sinon le PDF (en-tête document du modèle d'offre, ou document dans la fenêtre de 24 h).
+  const waDoc = meta.attachExcel ? docs.filter((d) => d.kind === "offer_excel") : docs.filter((d) => d.mime_type === "application/pdf");
+  const attachments = (m.channel === "email" ? docs : template || meta.attachOffer || meta.attachExcel ? waDoc.slice(0, 1) : [])
     .map((a) => ({ filename: a.filename, storagePath: a.storage_path, mimeType: a.mime_type }));
   const result = await adapter.send({ organizationId: orgId, messageId, channel: m.channel, to, subject, body, template, attachments });
   await db.query(

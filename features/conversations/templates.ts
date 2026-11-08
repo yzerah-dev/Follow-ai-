@@ -17,9 +17,11 @@ export const WHATSAPP_TEMPLATES = {
     language: "fr",
     text: "Bonjour {{1}}, j'espère que vous allez bien ! Cela fait longtemps que nous ne vous avons pas vu chez {{2}} ! J'ai pensé à vous et je vous ai préparé une offre ({{3}}) {{4}}, je vous la joins. Ce serait bien que l'on puisse programmer un rendez-vous pour en discuter et avancer : {{5}} se fera un plaisir de vous recevoir au showroom ou de vous voir en visio. Quel jour vous arrangerait ?\nMerci d'avance pour votre retour,\nLéa de chez {{6}}",
   },
+  // Relance (règles JONAS) : ni numéro d'offre, ni date de fin, ni marchandise « réservée », ni baisse de quantités proposée.
+  // En-tête document : l'Excel de l'offre, que le client renvoie avec ses quantités.
   relance_offre: {
     language: "fr",
-    text: "Bonjour {{1}}, j'espère que vous allez bien ! Je me permets de revenir vers vous au sujet de la proposition {{2}}, elle est toujours valable. Souhaitez-vous que je vous prépare la commande ?\nMerci d'avance pour votre retour,\nLéa de chez {{3}}",
+    text: "Bonjour {{1}}, j'espère que vous allez bien ! Je reviens vers vous au sujet de la sélection que je vous ai préparée. Si vous souhaitez ajuster les quantités, renvoyez-moi simplement l'Excel avec vos quantités adaptées et je m'occupe du reste. Souhaitez-vous que je vous prépare la commande ?\nMerci d'avance pour votre retour,\nLéa de chez {{2}}",
   },
   proposition_rdv: {
     language: "fr",

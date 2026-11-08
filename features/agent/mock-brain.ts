@@ -5,7 +5,7 @@
  */
 import { OBJECTION_LABEL, type EmailDraft, type ObjectionReply, type ReplyAnalysis, type Objection, type ChatAnswer } from "./schemas";
 import { sanitizeText } from "@/lib/security/untrusted";
-import { parseVoice, signoff, pushSignature, emoji, type Voice } from "./voice";
+import { parseVoice, signoff, pushSignature, signatureName, emoji, type Voice } from "./voice";
 import { referenceAnswer, proveOpening, RESEARCH_QUESTIONS } from "@/lib/ai/lea-objection-handler";
 import { CLOSINGS } from "@/lib/ai/lea-sales-playbook";
 
@@ -387,19 +387,18 @@ export type FollowupCtx = {
 /** Relance sans réponse — courte, polie, sans nouvelle promesse. */
 export function mockFollowup(ctx: FollowupCtx): EmailDraft {
   const v = parseVoice(ctx.voice);
-  const validity = ctx.offer ? fmtDate(ctx.offer.validUntil) : null;
-  // Chaque relance apporte un élément nouveau (validité, ajustement, rendez-vous) — jamais le même message.
+  // Règles de relance : ni numéro d'offre, ni date de fin, ni marchandise réservée, ni baisse de quantités ; chaque relance a son angle.
   const intro = ctx.attempt <= 1
-    ? `Un point utile sur ${ctx.offer ? `votre proposition ${ctx.offer.number}` : "notre dernier échange"} : je peux en ajuster les quantités à votre rythme de vente si besoin.`
-    : `Dernier point sur ${ctx.offer ? `la proposition ${ctx.offer.number}` : "notre échange"} : ${CLOSINGS.meeting.charAt(0).toLowerCase()}${CLOSINGS.meeting.slice(1)}`;
+    ? "Je reviens vers vous au sujet de la sélection que je vous ai préparée."
+    : `Je reviens vers vous une dernière fois au sujet de votre sélection. ${CLOSINGS.meeting}`;
   const body = [
-    greeting(ctx.contact), "", intro,
-    ctx.offer ? `Elle s'élève à ${fmt(ctx.offer.totalHt)} HT${validity ? ` et reste valable jusqu'au ${validity}` : ""}.` : "",
-    "", v.tone === "dynamic" ? "Un simple « OK » et je lance la commande ; je peux aussi ajuster les quantités si besoin." : "Je peux enregistrer votre commande sur simple retour de votre part, ou ajuster les quantités si besoin.",
-    ...signoff(v, ctx.senderName, ctx.companyName, "email"),
+    `${greeting(ctx.contact).replace(/,$/, "")}, j'espère que vous allez bien !`, "", intro,
+    "Si vous souhaitez ajuster les quantités, renvoyez-moi simplement l'Excel joint avec vos quantités adaptées et je m'occupe du reste.",
+    "", v.tone === "dynamic" ? "Un simple « OK » et je lance la commande." : "Je peux enregistrer votre commande sur simple retour de votre part.",
+    "", "Merci d'avance pour votre retour,", "", signatureName(ctx.companyName),
   ].filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
   return {
-    subject: ctx.offer ? `Relance — proposition ${ctx.offer.number}` : "Relance",
+    subject: `Votre sélection ${ctx.companyName}`,
     body,
     personalizationBasis: "generic",
     arguments: [`Relance n° ${ctx.attempt}`],
