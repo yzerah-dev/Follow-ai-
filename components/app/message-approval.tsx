@@ -79,9 +79,9 @@ export function SimulateReply({ conversationId, excelId }: { conversationId: str
           Le client renvoie l’Excel avec ses quantités{excelId ? <> — <a className="text-primary underline" href={`/api/assets/${excelId}`}>télécharger l’Excel de la sélection</a>, modifiez la colonne des quantités, puis joignez-le :</> : " :"}
         </p>
         <input type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required aria-label="Excel du client" className="block w-full text-[12.5px]" />
-        <input type="text" name="body" placeholder="Message du client (facultatif)" aria-label="Message accompagnant l’Excel" className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px]" />
+        <input type="text" name="body" placeholder="Texte du client (facultatif)" aria-label="Texte accompagnant le fichier" className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px]" />
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" variant="secondary" disabled={excelPending}>{excelPending ? "LÉA lit le fichier…" : "Envoyer l’Excel en tant que client"}</Button>
+          <Button type="submit" variant="secondary" disabled={excelPending}>{excelPending ? "LÉA lit le fichier…" : "Joindre l’Excel en tant que client"}</Button>
           {excelResult ? <span className={excelResult.ok ? "text-[12.5px] text-success" : "text-[12.5px] text-danger"}>{excelResult.ok ? excelResult.message : excelResult.error}</span> : null}
         </div>
       </form>
