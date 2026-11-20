@@ -199,3 +199,12 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
   références inconnues / quantités illisibles → tâche commercial, réponse « C'est noté ! J'ai mis à jour votre commande… » selon l'autonomie.
   Entrées : outil de simulation (Conversations) et webhook e-mail (pièces jointes base64). Non fait : téléchargement des documents WhatsApp
   réels (API média Meta, connecteur non configuré).
+
+## 2026-11-20 — Service client : le client pose ses questions de lui-même
+- `features/agent/customer-service.ts`, branché dans `analyzeInbound` (hors négociation, réclamation, accord, contenu suspect) :
+  - « Quand je reçois ma commande ? » : statut réel de la demande de commande ; jamais de date de livraison (aucune donnée logistique) → tâche commercial ;
+  - « As-tu cette référence en stock ? » : produit trouvé par référence, EAN ou nom (sinon LÉA demande lequel), disponibilité + quantité du dernier relevé avec sa date ;
+  - « Envoie-moi ma facture » : PDF d'origine envoyé seulement s'il a été importé (table `documents`) ; sinon copie demandée à la comptabilité (tâche). LÉA ne génère jamais de facture ;
+  - « Envoie-moi mon bon de commande » : PDF généré depuis `order_requests`.
+- Envoi : règles d'autonomie habituelles (identité vérifiée, plage horaire) ; pièces jointes via `ai_analysis.attachDocs` (dispatch).
+- Correctif : l'expiration des opportunités utilisait l'horloge du serveur au lieu de la date de la tournée (4 tests d'intégration en échec depuis le 2026-11-20).

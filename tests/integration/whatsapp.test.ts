@@ -7,7 +7,8 @@ import { withAgent, withUser } from "@/lib/database/client";
 import { runAutopilot } from "@/features/agent/autopilot";
 import { ingestInboundMessage, sendManualMessage, simulateCustomerReply, simulateCustomerExcelReply } from "@/features/conversations/service";
 import ExcelJS from "exceljs";
-import { getFile } from "@/lib/storage";
+import { getFile, putFile } from "@/lib/storage";
+import { acceptOfferAndPrepareOrder } from "@/features/offers/service";
 import { analyzeInbound } from "@/features/agent/lea";
 import { resetTestDb, ids, privileged } from "./db";
 
@@ -195,12 +196,79 @@ describe("Le client renvoie l'Excel avec ses quantités", () => {
   });
 
   it("fichier illisible : LÉA demande l'Excel d'origine, aucune offre créée", async () => {
-    const conv = (await q<{ id: string; offer_id: string }>(`select c.id, c.offer_id from conversations c join offers o on o.id = c.offer_id where c.organization_id = $1 and c.channel = 'whatsapp' and o.status in ('sent','negotiation') limit 1`, [I.orgA]))[0]!;
+    const conv = (await q<{ id: string; offer_id: string }>(
+      `select c.id, c.offer_id from conversations c join offers o on o.id = c.offer_id join contacts ct on ct.id = c.contact_id
+       where c.organization_id = $1 and c.channel = 'whatsapp' and o.status in ('sent','negotiation')
+         and not exists (select 1 from suppression_entries x where x.organization_id = c.organization_id and x.address = ct.mobile) limit 1`, [I.orgA]))[0]!;
     const n = async () => Number((await q<{ n: string }>(`select count(*) n from offers where organization_id = $1`, [I.orgA]))[0]!.n);
     const before = await n();
     const r = await withUser(I.bruno, (db) => simulateCustomerExcelReply(db, I.orgA, I.bruno, conv.id, { filename: "photo.xlsx", buffer: Buffer.from("pas un excel") }, "", { now: at(420) }));
     expect(r.status).toBe("unreadable");
     expect(await n()).toBe(before);
     expect((await lastOutbound(conv.id)).body).toContain("Je n'arrive pas à le lire");
+  });
+});
+
+describe("Service client : le client pose ses questions de lui-même", () => {
+  let conv: { id: string; offer_id: string; customer_id: string };
+  const ask = (text: string, minute: number) => withUser(I.bruno, (db) => simulateCustomerReply(db, I.orgA, I.bruno, conv.id, text, { now: at(minute) }));
+  beforeAll(async () => {
+    conv = (await q<{ id: string; offer_id: string; customer_id: string }>(
+      `select c.id, c.offer_id, c.customer_id from conversations c join offers o on o.id = c.offer_id join contacts ct on ct.id = c.contact_id
+       where c.organization_id = $1 and c.channel = 'whatsapp' and c.identity_confidence = 'verified' and o.status in ('sent','negotiation')
+         and not exists (select 1 from suppression_entries x where x.organization_id = c.organization_id and x.address = ct.mobile)
+       order by c.created_at desc limit 1`, [I.orgA]))[0]!;
+    expect(conv).toBeTruthy();
+  });
+
+  it("« as-tu cette référence en stock ? » : disponibilité réelle du catalogue, date du relevé", async () => {
+    const p = (await q<{ reference: string; name: string }>(
+      `select p.reference, p.name from products p where p.organization_id = $1 and p.status = 'active'
+         and exists (select 1 from inventory_snapshots s where s.product_id = p.id and s.qty_available > 0)
+         and not exists (select 1 from offer_lines ol where ol.offer_id = $2 and ol.product_id = p.id) limit 1`, [I.orgA, conv.offer_id]))[0]!;
+    const r = await ask(`Bonjour, as tu la référence ${p.reference} en stock ?`, 410);
+    expect(r.dispatch?.status).toBe("sent");
+    const m = await lastOutbound(conv.id);
+    expect(m.body).toMatch(/^Bonjour .+ !/);
+    expect(m.body).toContain(`« ${p.name} » (réf. ${p.reference}) est disponible`);
+    expect(m.body).toMatch(/pièces en stock \(stock du \d{1,2} \p{L}+\)/u);
+    expect(m.body).toContain("Souhaitez-vous que je vous en prépare ?");
+  });
+
+  it("« envoie-moi ma facture » : sans PDF importé, demande à la comptabilité + tâche ; avec PDF, envoi de l'original", async () => {
+    await ask("Envoie moi ma facture", 414);
+    const m = await lastOutbound(conv.id);
+    expect(m.body).toMatch(/Je demande une copie de votre facture n° .+ à notre comptabilité/);
+    const task = await q<{ title: string }>(`select title from followup_tasks where conversation_id = $1 and title like 'Envoyer la facture%'`, [conv.id]);
+    expect(task.length).toBe(1);
+    // L'ERP a fourni le PDF de la facture : LÉA envoie l'original, jamais une facture qu'elle aurait générée.
+    const inv = (await q<{ id: string; invoice_number: string }>(`select id, invoice_number from invoices where customer_id = $1 and doc_type = 'invoice' order by invoice_date desc, created_at desc limit 1`, [conv.customer_id]))[0]!;
+    const path = `${I.orgA}/invoices/${inv.id}/Facture-${inv.invoice_number}.pdf`;
+    await putFile(path, Buffer.from("%PDF-1.4 facture ERP"));
+    await privileged((c) => c.query(`insert into documents (organization_id, owner_type, owner_id, name, storage_path, mime_type, byte_size) values ($1,'invoice',$2,$3,$4,'application/pdf',20)`,
+      [I.orgA, inv.id, `Facture-${inv.invoice_number}.pdf`, path]));
+    const r = await ask("Envoie moi ma facture", 418);
+    expect(r.dispatch?.status).toBe("sent");
+    const sent = (await q<{ body: string; attachments: { filename: string }[] }>(`select body, attachments from messages where conversation_id = $1 and direction = 'outbound' order by created_at desc limit 1`, [conv.id]))[0]!;
+    expect(sent.body).toContain(`Voici votre facture n° ${inv.invoice_number}`);
+    expect(sent.attachments.map((a) => a.filename)).toEqual([`Facture-${inv.invoice_number}.pdf`]);
+  });
+
+  it("« quand je reçois ma commande ? » : statut réel, aucune date inventée, tâche pour le commercial ; bon de commande en PDF", async () => {
+    const order = await withUser(I.bruno, (db) => acceptOfferAndPrepareOrder(db, I.orgA, I.bruno, conv.offer_id));
+    await ask("Quand je reçois ma commande ?", 422);
+    const m = await lastOutbound(conv.id);
+    expect(m.body).toContain(`(${order.number},`);
+    expect(m.body).toContain("Je n'ai pas encore la date de livraison : je la vérifie avec votre commercial");
+    expect(m.body).not.toMatch(/livr\p{L}* (le|demain|lundi|mardi|mercredi|jeudi|vendredi)|sous \d+ jours/u);
+    expect((await q(`select 1 from followup_tasks where conversation_id = $1 and title like 'Date de livraison à confirmer%'`, [conv.id])).length).toBe(1);
+
+    const r = await ask("Envoie moi mon bon de commande", 426);
+    expect(r.dispatch?.status).toBe("sent");
+    const sent = (await q<{ body: string; attachments: { filename: string }[] }>(`select body, attachments from messages where conversation_id = $1 and direction = 'outbound' order by created_at desc limit 1`, [conv.id]))[0]!;
+    expect(sent.body).toContain(`Voici votre bon de commande ${order.number}`);
+    expect(sent.attachments.map((a) => a.filename)).toEqual([`Bon-de-commande-${order.number}.pdf`]);
+    const pdf = await getFile(`${I.orgA}/orders/${order.id}/Bon-de-commande-${order.number}.pdf`);
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
   });
 });

@@ -34,7 +34,9 @@ export function normalizeAddress(channel: Channel, raw: string): string | null {
   return toE164(raw);
 }
 
-type Meta = { template?: MessageTemplate | null; discountPct?: number | null; kind?: string; attempt?: number; attachOffer?: boolean; attachExcel?: boolean };
+type Meta = { template?: MessageTemplate | null; discountPct?: number | null; kind?: string; attempt?: number; attachOffer?: boolean; attachExcel?: boolean;
+  /** Documents précis à joindre (facture importée, bon de commande) : prioritaires sur les documents de l'offre. */
+  attachDocs?: { filename: string; storagePath: string; mimeType: string }[] };
 
 export async function dispatchMessage(
   db: Db,
@@ -109,8 +111,10 @@ export async function dispatchMessage(
   // Email : PDF + Excel. WhatsApp : un seul document — l'Excel de l'offre pour une relance (le client le renvoie avec ses quantités),
   // sinon le PDF (en-tête document du modèle d'offre, ou document dans la fenêtre de 24 h).
   const waDoc = meta.attachExcel ? docs.filter((d) => d.kind === "offer_excel") : docs.filter((d) => d.mime_type === "application/pdf");
-  const attachments = (m.channel === "email" ? docs : template || meta.attachOffer || meta.attachExcel ? waDoc.slice(0, 1) : [])
-    .map((a) => ({ filename: a.filename, storagePath: a.storage_path, mimeType: a.mime_type }));
+  const attachments = meta.attachDocs?.length
+    ? meta.attachDocs.slice(0, m.channel === "email" ? 10 : 1) // WhatsApp : un document par message
+    : (m.channel === "email" ? docs : template || meta.attachOffer || meta.attachExcel ? waDoc.slice(0, 1) : [])
+        .map((a) => ({ filename: a.filename, storagePath: a.storage_path, mimeType: a.mime_type }));
   const result = await adapter.send({ organizationId: orgId, messageId, channel: m.channel, to, subject, body, template, attachments });
   await db.query(
     `update messages set status = $2, subject = $3, body = $4, provider_message_id = $5, sent_at = $7, scheduled_at = null, sent_autonomously = $8,

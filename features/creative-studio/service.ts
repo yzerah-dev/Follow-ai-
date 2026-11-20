@@ -28,7 +28,7 @@ export const ASSET_LABEL: Record<AssetKind, string> = {
   lifestyle_shooting: "Shooting lifestyle",
 };
 
-async function loadBrand(db: Db, orgId: string, kind: TemplateKind) {
+export async function loadBrand(db: Db, orgId: string, kind: TemplateKind) {
   const s = (await db.query<{ name: string; is_demo: boolean; brand: { primaryColor?: string; secondaryColor?: string; companyName?: string } }>(
     `select o.name, o.is_demo, s.brand from organizations o join organization_settings s on s.organization_id = o.id where o.id = $1`, [orgId])).rows[0]!;
   const tpl = (await db.query<{ id: string; version: number; definition: unknown }>(

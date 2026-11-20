@@ -26,6 +26,7 @@ import { loadPolicy, loadAutonomy } from "@/features/settings/policy-repo";
 import { decideAutonomy, type AutonomyDecision } from "./autonomy";
 import { dispatchMessage, type DispatchResult } from "@/features/conversations/dispatch";
 import { acceptOfferAndPrepareOrder } from "@/features/offers/service";
+import { answerServiceRequests } from "./customer-service";
 
 type Actor = { userId: string | null };
 
@@ -282,6 +283,11 @@ export async function analyzeInbound(db: Db, orgId: string, messageId: string, a
     return { analysis, replyMessageId: null, runId };
   }
   if (analysis.intent === "out_of_office") return { analysis, replyMessageId: null, runId };
+  // Service client (suivi de commande, stock, facture, bon de commande) : réponse factuelle dédiée, sauf négociation ou réclamation.
+  if ((!analysis.objection || ["delivery", "lead_time"].includes(analysis.objection)) && !["complaint", "accept", "unsubscribe"].includes(analysis.intent) && !flags.length) {
+    const service = await answerServiceRequests(db, orgId, messageId, { now: opts.now });
+    if (service) return { analysis, replyMessageId: service.replyMessageId, runId, escalated: false, decision: service.decision, dispatch: service.dispatch, orderNumber: undefined, service: service.kinds };
+  }
   if (m.offer_id && ["sent", "approved"].includes((await db.query<{ status: string }>(`select status from offers where id = $1`, [m.offer_id])).rows[0]?.status ?? ""))
     await db.query(`update offers set status = 'negotiation' where id = $1 and status = 'sent' and $2`, [m.offer_id, analysis.intent === "objection"]);
   const reply = await draftReply(db, orgId, messageId, analysis, actor, { injectionSuspected: flags.length > 0, now: opts.now });

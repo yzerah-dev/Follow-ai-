@@ -199,8 +199,9 @@ export async function runOpportunityScan(db: Db, organizationId: string, today: 
     const exp = await db.query(
       `update opportunities set status = 'expired'
        where organization_id = $1 and status = 'open'
-         and (expires_at < now() or (type = any($2::opportunity_type[]) and not (dedupe_key = any($3::text[]))))`,
-      [organizationId, RECOMPUTED_TYPES, keys],
+         and (expires_at < $4::date or (type = any($2::opportunity_type[]) and not (dedupe_key = any($3::text[]))))`,
+      // Date de la tournée (et non l'horloge du serveur) : une tournée rejouée pour un jour donné reste cohérente.
+      [organizationId, RECOMPUTED_TYPES, keys, today],
     );
 
     const result = { created, updated, expired: exp.rowCount ?? 0, candidates: candidates.length, runId };
