@@ -57,18 +57,22 @@ export async function findProductsInText(db: Db, orgId: string, body: string): P
     const exact = (await db.query<FoundProduct>(`select ${cols} from products p where p.organization_id = $1 and (upper(p.reference) = any($2::text[]) or p.ean = any($3::text[])) limit 10`, [orgId, tokens, eans])).rows;
     if (exact.length) return { products: exact, ambiguous: [] };
   }
-  const words = [...new Set(norm(body).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !STOP.has(w)))].slice(0, 8);
+  // Pluriels simples (« bougies » → « bougie », « verres » → « verre ») pour retrouver les désignations au singulier.
+  const words = [...new Set(norm(body).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => (w.length > 4 ? w.replace(/[sx]$/, "") : w)))].slice(0, 8);
   if (!words.length) return { products: [], ambiguous: [] };
   const rows = (await db.query<FoundProduct & { score: number }>(
     `select ${cols}, (select count(*)::int from unnest($2::text[]) w
             where translate(lower(p.name), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc') like '%' || w || '%') as score
      from products p where p.organization_id = $1 and p.status = 'active'
-     order by score desc, p.is_new desc, p.name limit 5`, [orgId, words])).rows.filter((r) => r.score > 0);
+     order by score desc, p.name limit 30`, [orgId, words])).rows.filter((r) => r.score > 0);
   if (!rows.length) return { products: [], ambiguous: [] };
   const best = rows[0]!.score;
   const top = rows.filter((r) => r.score === best);
-  // Un mot isolé correspondant à plusieurs produits : on demande lequel plutôt que de choisir au hasard.
-  return top.length === 1 ? { products: top, ambiguous: [] } : { products: [], ambiguous: top.slice(0, 3) };
+  if (top.length === 1) return { products: top, ambiguous: [] };
+  // Plusieurs produits correspondent (« des bougies ») : les disponibles d'abord ; au-delà de 3, LÉA demande de préciser.
+  const inStock = (p: FoundProduct) => (p.qty_available !== null ? Number(p.qty_available) > 0 : p.availability === "in_stock");
+  const sorted = [...top].sort((a, b) => Number(inStock(b)) - Number(inStock(a)) || Number(b.qty_available ?? 0) - Number(a.qty_available ?? 0));
+  return { products: sorted.slice(0, 3), ambiguous: sorted.length > 3 ? sorted.slice(3) : [] };
 }
 
 const dateFr = (d: string) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${d.slice(0, 10)}T00:00:00Z`));
@@ -146,12 +150,22 @@ export async function answerServiceRequests(db: Db, orgId: string, inboundId: st
   const parts: Part[] = [];
   if (kinds.includes("stock")) {
     const found = await findProductsInText(db, orgId, m.body);
-    if (found.products.length) {
+    const listed = found.products.filter((p) => stockSentence(p).available);
+    if (found.products.length > 1 && listed.length) {
+      // Plusieurs produits : une liste courte de ce qui est en stock (les ruptures ne sont pas listées).
+      const asOf = listed.map((p) => p.captured_at).filter(Boolean).sort().pop();
+      const more = found.ambiguous.length + found.products.length - listed.length;
+      parts.push({
+        lines: [`Oui, voici ce que j'ai en stock${asOf ? ` (stock du ${dateFr(asOf)})` : ""} :`,
+          ...listed.map((p) => `• « ${p.name} » (réf. ${p.reference})${p.qty_available !== null ? ` : ${dec(p.qty_available).toFixed(0)} pièces` : ""}${p.units_per_case && p.units_per_case > 1 ? `, par colis de ${p.units_per_case}` : ""}`),
+          ...(more > 0 ? [`J'ai d'autres références dans cette gamme : dites-moi ce que vous cherchez exactement et je vous réponds tout de suite.`] : [])],
+        close: "Souhaitez-vous que je vous en prépare ?", answered: listed.length, unanswered: 0,
+      });
+    } else if (found.products.length) {
       const s = found.products.slice(0, 5).map(stockSentence);
-      parts.push({ lines: s.map((x) => x.text), close: s.some((x) => x.available) ? "Souhaitez-vous que je vous en prépare ?" : undefined, answered: s.filter((x) => !x.unknown).length, unanswered: s.filter((x) => x.unknown).length,
+      const more = found.ambiguous.length ? [`J'en ai ${found.ambiguous.length} autre${found.ambiguous.length > 1 ? "s" : ""} dans cette gamme : dites-moi ce que vous cherchez exactement et je vous réponds tout de suite.`] : [];
+      parts.push({ lines: [...s.map((x) => x.text), ...more], close: s.some((x) => x.available) ? "Souhaitez-vous que je vous en prépare ?" : undefined, answered: s.filter((x) => !x.unknown).length, unanswered: s.filter((x) => x.unknown).length,
         tasks: s.some((x) => x.unknown) ? [{ title: "Disponibilité à confirmer au client", notes: s.filter((x) => x.unknown).map((x) => x.text).join("\n") }] : undefined });
-    } else if (found.ambiguous.length) {
-      parts.push({ lines: [`Pour être sûre de vous répondre juste, de quel produit s'agit-il : ${found.ambiguous.map((p) => `« ${p.name} » (réf. ${p.reference})`).join(", ")} ?`], answered: 1, unanswered: 0 });
     } else if (m.offer_id && kinds.length === 1) {
       return null; // question sur la disponibilité des lignes de l'offre en cours : réponse habituelle
     } else if (kinds.length === 1) {

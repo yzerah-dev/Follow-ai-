@@ -235,6 +235,14 @@ describe("Service client : le client pose ses questions de lui-même", () => {
     expect(m.body).toContain("Souhaitez-vous que je vous en prépare ?");
   });
 
+  it("« vous avez encore des bougies ? » : pluriel reconnu, stock des produits correspondants (pas des lignes de l'offre)", async () => {
+    const word = (await q<{ w: string }>(`select lower(split_part(name, ' ', 1)) w from products where organization_id = $1 and status = 'active' group by 1 having count(*) >= 2 order by count(*) desc limit 1`, [I.orgA]))[0]!.w;
+    await ask(`Vous avez encore des ${word}s ?`, 412);
+    const m = await lastOutbound(conv.id);
+    expect(m.body.toLowerCase()).toContain(`« ${word}`);
+    expect(m.body).not.toContain("pour la quantité proposée"); // réponse sur le catalogue, pas sur l'offre en cours
+  });
+
   it("« envoie-moi ma facture » : sans PDF importé, demande à la comptabilité + tâche ; avec PDF, envoi de l'original", async () => {
     await ask("Envoie moi ma facture", 414);
     const m = await lastOutbound(conv.id);
