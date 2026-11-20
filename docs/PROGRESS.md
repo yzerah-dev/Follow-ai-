@@ -208,3 +208,15 @@ activera des envois réels autonomes — à faire uniquement avec votre accord e
   - « Envoie-moi mon bon de commande » : PDF généré depuis `order_requests`.
 - Envoi : règles d'autonomie habituelles (identité vérifiée, plage horaire) ; pièces jointes via `ai_analysis.attachDocs` (dispatch).
 - Correctif : l'expiration des opportunités utilisait l'horloge du serveur au lieu de la date de la tournée (4 tests d'intégration en échec depuis le 2026-11-20).
+
+## 2026-11-20 — Vrai WhatsApp (Meta) en mode test + préparation de la mise en ligne
+- Connexions → « Connecter le vrai WhatsApp Business » (administrateurs) : identifiants Meta, jeton chiffré, confirmation explicite
+  des envois réels, audit. **Mode test** : envois réels uniquement vers les numéros de test, autres conversations simulées,
+  messages d'autres numéros ignorés. Numéros de test rattachables à un client (identité vérifiée).
+- Connecteur Meta : documents PDF/Excel dans les modèles et les messages libres, téléchargement des fichiers reçus (Excel → offre).
+- Webhook : filtre mode test, Excel reçu traité par `handleClientExcel`.
+- `npm run db:deploy` : migrations incrémentales (`app_migrations`), shim auto sur base neuve, `--demo-seed` idempotent,
+  mot de passe de démo secret obligatoire en ligne (`DEMO_SEED_PASSWORD`). `npm start` utilise `$PORT`.
+- `APP_ENCRYPTION_KEY` : base64 32 octets ou phrase secrète ≥ 40 caractères.
+- Correctif : quota d'envois quotidien borné au jour concerné (journée rejouée → quota faussé par les envois postérieurs).
+- Guide pas à pas : `docs/MISE_EN_LIGNE_TEST.md`. Testé avec des réponses Meta simulées ; **pas encore testé contre Meta**.

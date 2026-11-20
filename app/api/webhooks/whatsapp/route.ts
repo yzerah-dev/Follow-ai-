@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { withAgent, withPrivileged } from "@/lib/database/client";
-import { parseWhatsAppWebhook, verifyMetaSignature } from "@/lib/integrations/whatsapp-cloud";
+import { parseWhatsAppWebhook, verifyMetaSignature, WhatsAppCloudAdapter } from "@/lib/integrations/whatsapp-cloud";
 import { ingestInboundMessage } from "@/features/conversations/service";
 import { analyzeInbound } from "@/features/agent/lea";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { safeEqual } from "@/lib/security/crypto";
+import { readConnectionSecret } from "@/lib/integrations/secrets";
+import { toE164 } from "@/lib/phone";
+import { handleClientExcel, isExcelFile } from "@/features/agent/excel-return";
+import { MAX_CLIENT_EXCEL_BYTES } from "@/features/offers/client-excel";
+import { isTestNumberAllowed, type WhatsAppConfig } from "@/features/conversations/whatsapp-connection";
 
 /**
  * Webhook WhatsApp Business Platform (Meta).
@@ -36,16 +41,34 @@ export async function POST(req: Request) {
   let processed = 0;
   for (const m of inbound) {
     // Seule lecture privilégiée : retrouver l'organisation propriétaire du numéro WhatsApp.
-    const org = await withPrivileged(async (db) =>
-      (await db.query<{ organization_id: string }>(
-        `select organization_id from communication_connections where channel = 'whatsapp' and provider = 'whatsapp_cloud' and status = 'connected' and config->>'phoneNumberId' = $1 limit 1`,
-        [m.phoneNumberId])).rows[0]?.organization_id,
+    const conn = await withPrivileged(async (db) =>
+      (await db.query<{ id: string; organization_id: string; config: WhatsAppConfig }>(
+        `select id, organization_id, config from communication_connections where channel = 'whatsapp' and provider = 'whatsapp_cloud' and status = 'connected' and config->>'phoneNumberId' = $1 limit 1`,
+        [m.phoneNumberId])).rows[0],
     );
-    if (!org) continue;
+    if (!conn) continue;
+    const org = conn.organization_id;
+    // Mode test : seuls les numéros autorisés sont lus ; LÉA ne répond à personne d'autre.
+    if (!isTestNumberAllowed(conn.config, toE164(m.from) ?? `+${m.from}`)) continue;
+    // Document joint (ex. l'Excel renvoyé avec les quantités) : téléchargé avec le jeton du numéro, taille bornée.
+    let excel: { filename: string; buffer: Buffer } | null = null;
+    if (m.document && isExcelFile(m.document.filename, m.document.mimeType)) {
+      const secret = await readConnectionSecret(org, conn.id);
+      if (secret?.accessToken) {
+        try {
+          const f = await new WhatsAppCloudAdapter({ phoneNumberId: m.phoneNumberId, accessToken: secret.accessToken }).downloadMedia(m.document.mediaId, MAX_CLIENT_EXCEL_BYTES);
+          excel = { filename: m.document.filename, buffer: f.data };
+        } catch {
+          excel = null; // fichier non récupérable : le message est traité normalement (le commercial voit la pièce signalée)
+        }
+      }
+    }
     await withAgent(org, async (db) => {
       const r = await ingestInboundMessage(db, org, { channel: "whatsapp", from: m.from, subject: null, body: m.body, providerMessageId: m.providerMessageId, simulated: false,
         receivedAt: m.timestamp ? new Date(Number(m.timestamp) * 1000) : undefined });
-      if (!r.duplicate) await analyzeInbound(db, org, r.messageId, { userId: null });
+      if (r.duplicate) return;
+      if (excel) await handleClientExcel(db, org, r.messageId, excel);
+      else await analyzeInbound(db, org, r.messageId, { userId: null });
     });
     processed++;
   }

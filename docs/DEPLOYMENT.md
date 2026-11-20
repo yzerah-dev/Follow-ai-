@@ -1,5 +1,9 @@
 # Déploiement (Vercel + Supabase)
 
+> **Mise en ligne de TEST (vrai WhatsApp en mode test) : voir `MISE_EN_LIGNE_TEST.md` (Railway : serveur Node + disque + PostgreSQL,
+> migrations incrémentales `npm run db:deploy`).** Le chemin Vercel ci-dessous reste valable pour la production une fois le stockage
+> de fichiers externe implémenté.
+
 > Aucun déploiement n'a été effectué. Toute mise en production nécessite une approbation explicite.
 
 ## 1. Supabase

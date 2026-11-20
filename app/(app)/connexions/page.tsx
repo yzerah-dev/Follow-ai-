@@ -8,6 +8,9 @@ import { PageHeader } from "@/components/ui/misc";
 import { ActionButton } from "@/components/app/action-button";
 import { CONNECTION_STATUS } from "@/components/app/labels";
 import { toggleSimulationAction } from "@/app/actions/commercial";
+import { headers } from "next/headers";
+import { WHATSAPP_TEMPLATES } from "@/features/conversations/templates";
+import { WhatsAppSetup } from "./whatsapp-setup";
 
 export const metadata = { title: "Connexions" };
 
@@ -20,8 +23,14 @@ const CHANNELS = [
 ] as const;
 
 export default async function ConnectionsPage() {
-  const { rows, role } = await db(async (d, ctx) => ({
+  const h = await headers();
+  const webhookUrl = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host") ?? "votre-domaine"}/api/webhooks/whatsapp`;
+  const { rows, role, customers, hasToken } = await db(async (d, ctx) => ({
     role: ctx.org.role,
+    customers: isAdmin(ctx.org.role)
+      ? (await d.query<{ id: string; name: string }>(`select id, coalesce(trade_name, legal_name) as name from customers where organization_id = $1 order by 2 limit 500`, [ctx.org.organizationId])).rows
+      : [],
+    hasToken: !!(await d.query(`select 1 from communication_connections where organization_id = $1 and channel = 'whatsapp' and provider = 'whatsapp_cloud' and last_checked_at is not null`, [ctx.org.organizationId])).rowCount,
     rows: (await d.query<{ id: string; channel: string; provider: string; status: string; simulation_enabled: boolean; display_name: string | null; last_error: string | null; config: { approvedTemplates?: string[]; templatesStatus?: string } }>(
       `select id, channel, provider, status, simulation_enabled, display_name, last_error, config from communication_connections where organization_id = $1 order by channel, provider`, [ctx.org.organizationId])).rows,
   }));
@@ -84,6 +93,19 @@ export default async function ConnectionsPage() {
                     );
                   })}
                 </div>
+                {ch.key === "whatsapp" && isAdmin(role) ? (() => {
+                  const wa = rows.find((r) => r.channel === "whatsapp" && r.provider === "whatsapp_cloud");
+                  const cfg = (wa?.config ?? {}) as { phoneNumberId?: string; wabaId?: string; testMode?: boolean; testNumbers?: string[]; approvedTemplates?: string[] };
+                  return (
+                    <WhatsAppSetup
+                      webhookUrl={webhookUrl}
+                      customers={customers}
+                      templates={Object.entries(WHATSAPP_TEMPLATES).map(([name, t]) => ({ name, text: t.text }))}
+                      initial={{ connected: wa?.status === "connected", phoneNumberId: cfg.phoneNumberId ?? "", wabaId: cfg.wabaId ?? "", testMode: cfg.testMode ?? true,
+                        testNumbers: cfg.testNumbers ?? [], approvedTemplates: wa?.status === "connected" ? cfg.approvedTemplates ?? [] : [], hasToken }}
+                    />
+                  );
+                })() : null}
               </CardContent>
             </Card>
           );

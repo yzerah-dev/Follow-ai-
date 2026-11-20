@@ -4,6 +4,8 @@
  * WhatsApp : fenêtre de service de 24 h (sinon modèle approuvé obligatoire) ;
  * envois autonomes : plage horaire et quota quotidien (sinon programmation).
  */
+import { isTestNumberAllowed, type WhatsAppConfig } from "./whatsapp-connection";
+import { WHATSAPP_TEMPLATES } from "./templates";
 import type { Db } from "@/lib/database/client";
 import { audit, type AuditActor } from "@/lib/security/audit";
 import { adapterFor } from "@/lib/integrations/registry";
@@ -73,15 +75,17 @@ export async function dispatchMessage(
      where organization_id = $1 and channel = $2 and (status = 'connected' or simulation_enabled) order by (status = 'connected') desc limit 1`, [orgId, m.channel])).rows[0];
   if (!conn) throw new DispatchBlocked(`Aucune connexion ${m.channel === "email" ? "email" : "WhatsApp"} active ni mode simulation : configurez-la dans « Connexions ».`);
 
-  // WhatsApp : hors fenêtre de 24 h, seul un modèle approuvé peut être envoyé.
+  // Mode test WhatsApp : envoi réel uniquement vers les numéros de test ; les autres conversations restent simulées.
+  const real = conn.status === "connected" && !(m.channel === "whatsapp" && !isTestNumberAllowed(conn.config as WhatsAppConfig, to));
+
+  // WhatsApp : hors fenêtre de 24 h, seul un modèle approuvé peut être envoyé (approbation Meta vérifiée pour un envoi réel).
   let template: MessageTemplate | null = null;
   if (m.channel === "whatsapp" && !whatsappWindowOpen(m.last_inbound_at, now)) {
     template = meta.template ?? null;
     if (!template) throw new DispatchBlocked("WhatsApp : plus de 24 h depuis le dernier message du client, un modèle approuvé est obligatoire.");
-    if (!(conn.config.approvedTemplates ?? []).includes(template.name)) throw new DispatchBlocked(`WhatsApp : le modèle « ${template.name} » n'est pas approuvé pour ce numéro.`);
+    const approved = real ? conn.config.approvedTemplates ?? [] : Object.keys(WHATSAPP_TEMPLATES);
+    if (!approved.includes(template.name)) throw new DispatchBlocked(`WhatsApp : le modèle « ${template.name} » n'est pas approuvé pour ce numéro.`);
   }
-
-  const real = conn.status === "connected";
   const adapter = real
     ? adapterFor(m.channel, conn.provider, await readConnectionSecret(orgId, conn.id), conn.config as Record<string, unknown>)
     : adapterFor(m.channel, "simulated");
@@ -91,7 +95,8 @@ export async function dispatchMessage(
   if (opts.autonomous) {
     // Plage horaire et quota : on programme au lieu d'envoyer (jamais d'envoi hors cadre).
     const sentToday = (await db.query<{ n: number }>(
-      `select count(*)::int as n from messages where organization_id = $1 and sent_autonomously and sent_at >= date_trunc('day', $2::timestamptz)`, [orgId, now.toISOString()])).rows[0]!.n;
+      `select count(*)::int as n from messages where organization_id = $1 and sent_autonomously
+         and sent_at >= date_trunc('day', $2::timestamptz) and sent_at < date_trunc('day', $2::timestamptz) + interval '1 day'`, [orgId, now.toISOString()])).rows[0]!.n;
     let reason: string | null = null;
     if (!inSendWindow(now, settings.sendWindow, settings.timezone)) reason = "Hors plage d'envoi : programmé.";
     else if (sentToday >= settings.dailySendLimit) reason = "Quota quotidien atteint : programmé.";

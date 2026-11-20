@@ -51,7 +51,7 @@ describe("WhatsApp Cloud API (Meta)", () => {
   });
   it("extrait les messages entrants et ignore les statuts", () => {
     const payload = { entry: [{ changes: [{ value: { metadata: { phone_number_id: "PNID" }, contacts: [{ profile: { name: "Jean" } }], messages: [{ from: "33612345678", id: "wamid.1", timestamp: "1700000000", type: "text", text: { body: "Bonjour" } }] } }, { value: { metadata: { phone_number_id: "PNID" }, statuses: [{ id: "x" }] } }] }] };
-    expect(parseWhatsAppWebhook(payload)).toEqual([{ phoneNumberId: "PNID", from: "33612345678", providerMessageId: "wamid.1", body: "Bonjour", timestamp: "1700000000", profileName: "Jean" }]);
+    expect(parseWhatsAppWebhook(payload)).toEqual([{ phoneNumberId: "PNID", from: "33612345678", providerMessageId: "wamid.1", body: "Bonjour", timestamp: "1700000000", profileName: "Jean", document: null }]);
   });
   it("construit les charges utiles texte et modèle", () => {
     const base = { organizationId: "o", messageId: "m", channel: "whatsapp" as const, to: "+33612345678", subject: null, body: "Salut", attachments: [] };

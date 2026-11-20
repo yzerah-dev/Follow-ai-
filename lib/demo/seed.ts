@@ -127,7 +127,9 @@ const CITIES = [
 const SEGMENTS = ["Indépendant", "Grande distribution", "Réseau franchisé", "E-commerce", "Grossiste", "Concept store"];
 const FUNCTIONS = ["Gérant", "Acheteur", "Responsable rayon", "Directeur", "Assistante achats", "Comptabilité"];
 
-export async function seedDemo(databaseUrl: string, opts: { today?: string } = {}) {
+export async function seedDemo(databaseUrl: string, opts: { today?: string; password?: string } = {}) {
+  // En ligne, le mot de passe de démonstration publié dans le code est remplacé par un secret (voir db:deploy).
+  const password = opts.password ?? DEMO_PASSWORD;
   const today = opts.today ?? toIsoDate(new Date());
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 4 });
   const started = Date.now();
@@ -141,7 +143,7 @@ export async function seedDemo(databaseUrl: string, opts: { today?: string } = {
           `insert into auth.users (email, encrypted_password, raw_user_meta_data)
            values ($1, extensions.crypt($2, extensions.gen_salt('bf', 10)), $3)
            on conflict (email) do update set encrypted_password = excluded.encrypted_password returning id`,
-          [u.email, DEMO_PASSWORD, { full_name: u.name, demo: true }],
+          [u.email, password, { full_name: u.name, demo: true }],
         );
         userIds[u.key] = r.rows[0]!.id;
       }
@@ -178,7 +180,7 @@ export async function seedDemo(databaseUrl: string, opts: { today?: string } = {
       console.log(`  ${spec.name} : ${scan.created} opportunités détectées`);
     }
     console.log(`Seed de démonstration terminé en ${((Date.now() - started) / 1000).toFixed(1)} s.`);
-    console.log(`Comptes : ${DEMO_USERS.map((u) => u.email).join(", ")} — mot de passe : ${DEMO_PASSWORD}`);
+    console.log(`Comptes : ${DEMO_USERS.map((u) => u.email).join(", ")} — mot de passe : ${opts.password ? "(celui de DEMO_SEED_PASSWORD)" : DEMO_PASSWORD}`);
   } finally {
     await pool.end();
   }

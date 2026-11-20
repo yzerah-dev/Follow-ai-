@@ -20,6 +20,7 @@ import { decideAsset } from "@/features/creative-studio/service";
 import { draftOfferEmail } from "@/features/agent/lea";
 import { decideMessage, sendManualMessage, simulateCustomerReply, simulateCustomerExcelReply } from "@/features/conversations/service";
 import { isExcelFile } from "@/features/agent/excel-return";
+import { saveWhatsAppConnection, disconnectWhatsApp, linkTestNumbersToCustomer, parseTestNumbers } from "@/features/conversations/whatsapp-connection";
 import { MAX_CLIENT_EXCEL_BYTES } from "@/features/offers/client-excel";
 import { runOpportunityScan } from "@/features/opportunities/service";
 import { runAutopilot } from "@/features/agent/autopilot";
@@ -527,5 +528,44 @@ export async function saveSalesTargetAction(_: ActionResult | null, form: FormDa
   });
   revalidatePath("/parametres");
   revalidatePath("/");
+  return r;
+}
+
+const waFormSchema = z.object({
+  phoneNumberId: z.string().trim().min(5).max(30),
+  wabaId: z.string().trim().max(30).optional().default(""),
+  accessToken: z.string().trim().max(1000).optional().default(""),
+  testNumbers: z.string().max(500).optional().default(""),
+  testCustomerId: z.string().optional().default(""),
+});
+
+/**
+ * Connexion WhatsApp RÉELLE (Meta Cloud API). Administrateurs uniquement, confirmation explicite obligatoire :
+ * activer un connecteur réel = activer des envois réels (règle 6). Mode test : envois réels limités aux numéros de test.
+ */
+export async function saveWhatsAppConnectionAction(_: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const r = await run(isAdmin, async (db, ctx) => {
+    if (form.get("confirmRealSends") !== "on") throw new Error("Cochez la case d'autorisation des envois WhatsApp réels pour activer la connexion.");
+    const s = waFormSchema.parse(Object.fromEntries([...form.entries()].filter(([k]) => k !== "approvedTemplates")));
+    const testMode = form.get("testMode") === "on";
+    const parsed = parseTestNumbers(s.testNumbers);
+    if (parsed.invalid.length) throw new Error(`Numéro(s) invalide(s) : ${parsed.invalid.join(", ")}`);
+    await saveWhatsAppConnection(db, ctx.org.organizationId, ctx.userId, {
+      phoneNumberId: s.phoneNumberId, wabaId: s.wabaId || null, accessToken: s.accessToken || null, testMode, testNumbers: parsed.numbers,
+      approvedTemplates: form.getAll("approvedTemplates").map(String),
+    });
+    if (s.testCustomerId && parsed.numbers.length) await linkTestNumbersToCustomer(db, ctx.org.organizationId, ctx.userId, uuid.parse(s.testCustomerId), parsed.numbers);
+    return testMode ? `WhatsApp connecté en mode test : LÉA n'écrit pour de vrai qu'à ${parsed.numbers.length} numéro(s) de test.` : "WhatsApp connecté : envois réels actifs.";
+  }, { key: "wa-connect", limit: 10 });
+  revalidatePath("/connexions");
+  return r;
+}
+
+export async function disconnectWhatsAppAction(): Promise<ActionResult> {
+  const r = await run(isAdmin, async (db, ctx) => {
+    await disconnectWhatsApp(db, ctx.org.organizationId, ctx.userId);
+    return "WhatsApp déconnecté : plus aucun envoi réel.";
+  });
+  revalidatePath("/connexions");
   return r;
 }

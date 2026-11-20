@@ -4,8 +4,10 @@ import crypto from "node:crypto";
 function key(): Buffer {
   const raw = process.env.APP_ENCRYPTION_KEY ?? "";
   const k = Buffer.from(raw, "base64");
-  if (k.length !== 32) throw new Error("APP_ENCRYPTION_KEY doit être une clé de 32 octets encodée en base64.");
-  return k;
+  if (k.length === 32 && /^[A-Za-z0-9+/]{43}=$/.test(raw)) return k;
+  // Phrase secrète longue (saisie facile chez l'hébergeur) : clé dérivée par SHA-256.
+  if (raw.length >= 40) return crypto.createHash("sha256").update(raw, "utf8").digest();
+  throw new Error("APP_ENCRYPTION_KEY : clé de 32 octets en base64, ou phrase secrète aléatoire d'au moins 40 caractères.");
 }
 
 export function encryptSecret(plaintext: string): string {

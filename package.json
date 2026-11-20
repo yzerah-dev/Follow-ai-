@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start -p ${PORT:-3000}",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
@@ -19,6 +19,7 @@
     "e2e": "playwright test --trace off",
     "db:reset": "tsx scripts/db-reset.ts",
     "db:seed": "tsx scripts/db-seed.ts",
+    "db:deploy": "tsx scripts/db-deploy.ts",
     "perf:seed": "tsx scripts/perf/seed-large.ts",
     "perf": "NODE_OPTIONS=--expose-gc tsx scripts/perf/run.ts"
   },
